@@ -1,0 +1,108 @@
+# ==========================================
+# Node.js Portable Installation (DO NOT PUSH)
+# ==========================================
+node-v*/
+node-v*.zip
+node-v*-win-x64/
+
+# ==========================================
+# Batch Files (Environment Specific)
+# ==========================================
+start-dev.bat
+start-expo.bat
+*.bat
+
+# ==========================================
+# Node Modules
+# ==========================================
+node_modules/
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+package-lock.json
+
+# ==========================================
+# Environment Variables (NEVER PUSH THESE!)
+# ==========================================
+.env
+.env.local
+.env.production
+.env.*.local
+
+# ==========================================
+# Logs
+# ==========================================
+logs/
+*.log
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+
+# ==========================================
+# OS Files
+# ==========================================
+.DS_Store
+Thumbs.db
+desktop.ini
+*.tmp
+*.temp
+
+# ==========================================
+# IDE / Editor
+# ==========================================
+.vscode/
+.idea/
+*.swp
+*.swo
+*.sublime-project
+*.sublime-workspace
+
+# ==========================================
+# Build Output
+# ==========================================
+dist/
+build/
+*.tgz
+out/
+
+# ==========================================
+# Test Coverage
+# ==========================================
+coverage/
+.nyc_output/
+
+# ==========================================
+# Expo & React Native
+# ==========================================
+.expo/
+.expo-shared/
+*.jks
+*.p8
+*.p12
+*.key
+*.mobileprovision
+*.orig.*
+web-build/
+
+# ==========================================
+# Database
+# ==========================================
+*.sql
+*.sqlite
+*.db
+
+# ==========================================
+# Backup Files
+# ==========================================
+backup/
+*.bak
+*~
+
+# ==========================================
+# Test Files (optional)
+# ==========================================
+test*.js
+checkUsers.js
+checkEnv.js
+testAuth*.js
+testSMS.js
