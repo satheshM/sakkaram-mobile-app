@@ -12,6 +12,10 @@ const logger = require('./config/logger');
 // Import Routes
 const authRoutes = require('./routes/authRoutes');
 
+// Vehicle Routes
+const vehicleRoutes = require('./routes/vehicleRoutes');
+
+
 const app = express();
 
 // Security Middlewares
@@ -74,6 +78,12 @@ app.get('/api', (req, res) => {
 
 // Authentication Routes
 app.use('/api/auth', authRoutes);
+
+// Vehicle Routes
+app.use('/api/vehicles', vehicleRoutes);
+// Wallet Routes
+const walletRoutes = require('./routes/walletRoutes');
+app.use('/api/wallet', walletRoutes);
 
 // 404 Handler
 app.use((req, res) => {

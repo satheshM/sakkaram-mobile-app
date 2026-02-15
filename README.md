@@ -161,3 +161,9 @@ This is a personal learning project.
 ---
 
 **Built with ❤️ for Indian Farmers**
+
+
+
+DB: https://railway.com/project/333466fb-4911-4466-9bf6-28c1b07c5aea/service/e13a52dc-a805-4d56-9425-281a4241cd95/database?environmentId=8a3e985c-b7ca-4218-9a18-4bd50f5758a5
+
+Img DirectoryCloud:https://console.cloudinary.com/app/c-71b64d7283753789663d3179c2ee80/settings/api-keys
