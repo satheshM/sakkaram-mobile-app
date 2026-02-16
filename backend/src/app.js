@@ -94,6 +94,11 @@ app.use('/api/bookings', bookingRoutes);
 const paymentRoutes = require('./routes/paymentRoutes');
 app.use('/api/payments', paymentRoutes);
 
+// Review Routes  ← ADD THIS
+const reviewRoutes = require('./routes/reviewRoutes');
+app.use('/api/reviews', reviewRoutes);
+
+
 // 404 Handler
 app.use((req, res) => {
   res.status(404).json({
