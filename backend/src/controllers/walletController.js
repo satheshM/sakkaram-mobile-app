@@ -55,6 +55,8 @@ const addMoney = async (req, res) => {
       });
     }
 
+    const topupAmount = parseFloat(amount);
+
     // Get or create wallet
     let walletResult = await query(
       'SELECT * FROM wallets WHERE user_id = $1',
@@ -62,38 +64,56 @@ const addMoney = async (req, res) => {
     );
 
     let walletId;
+    let oldBalance = 0;
+    
     if (walletResult.rows.length === 0) {
       const newWallet = await query(
         'INSERT INTO wallets (user_id, balance) VALUES ($1, 0) RETURNING *',
         [userId]
       );
       walletId = newWallet.rows[0].id;
+      oldBalance = 0;
     } else {
       walletId = walletResult.rows[0].id;
+      oldBalance = parseFloat(walletResult.rows[0].balance);
     }
+
+    const newBalance = oldBalance + topupAmount;
 
     // Update wallet balance
     const updateResult = await query(
-      'UPDATE wallets SET balance = balance + $1, updated_at = NOW() WHERE id = $2 RETURNING *',
-      [amount, walletId]
+      'UPDATE wallets SET balance = $1, updated_at = NOW() WHERE id = $2 RETURNING *',
+      [newBalance, walletId]
     );
 
-    const newBalance = updateResult.rows[0].balance;
-
-    // Record transaction
+    // Record transaction with balance tracking
     await query(
       `INSERT INTO wallet_transactions (
-        wallet_id, type, amount, balance_after, description, created_at
-      ) VALUES ($1, 'credit', $2, $3, $4, NOW())`,
+        wallet_id, 
+        transaction_type, 
+        amount, 
+        balance_before,
+        balance_after,
+        description, 
+        reference_type,
+        created_at
+      ) VALUES ($1, $2, $3, $4, $5, $6, $7, NOW())`,
       [
         walletId,
-        amount,
+        'credit',
+        topupAmount,
+        oldBalance,
         newBalance,
-        `Wallet top-up via ${paymentMethod || 'UPI'}`
+        `Wallet top-up via ${paymentMethod || 'UPI'}`,
+        'topup'
       ]
     );
 
-    logger.info(`Wallet top-up: ${userId} added ₹${amount}`);
+    logger.info(`Wallet top-up: ${userId} added ₹${topupAmount}`, {
+      oldBalance,
+      newBalance,
+      amount: topupAmount
+    });
 
     res.status(200).json({
       success: true,
@@ -117,13 +137,14 @@ const deductCommission = async (req, res) => {
   try {
     const { userId, amount, bookingId, description } = req.body;
 
-  if (!userId || !amount || parseFloat(amount) <= 0) {
-  return res.status(400).json({
-    success: false,
-    message: 'Invalid request'
-  });
-}
-const deductAmount = parseFloat(amount);
+    if (!userId || !amount || parseFloat(amount) <= 0) {
+      return res.status(400).json({
+        success: false,
+        message: 'Invalid request'
+      });
+    }
+
+    const deductAmount = parseFloat(amount);
 
     // Get wallet
     const walletResult = await query(
@@ -139,49 +160,58 @@ const deductAmount = parseFloat(amount);
     }
 
     const wallet = walletResult.rows[0];
+    const oldBalance = parseFloat(wallet.balance);
 
-// Check sufficient balance
-if (wallet.balance < deductAmount) {  // ← FIXED
-  return res.status(400).json({
-    success: false,
-    message: 'Insufficient wallet balance',
-    required: deductAmount,  // ← Also fix this
-    available: wallet.balance
-  });
-}
+    // Check sufficient balance
+    if (oldBalance < deductAmount) {
+      return res.status(400).json({
+        success: false,
+        message: 'Insufficient wallet balance',
+        required: deductAmount,
+        available: oldBalance
+      });
+    }
+
+    const newBalance = oldBalance - deductAmount;
 
     // Deduct amount
     const updateResult = await query(
-      'UPDATE wallets SET balance = balance - $1, updated_at = NOW() WHERE id = $2 RETURNING *',
-      [deductAmount, wallet.id]
+      'UPDATE wallets SET balance = $1, updated_at = NOW() WHERE id = $2 RETURNING *',
+      [newBalance, wallet.id]
     );
 
-    const newBalance = updateResult.rows[0].balance;
+    // Record transaction with all new fields
+    await query(
+      `INSERT INTO wallet_transactions (
+        wallet_id, 
+        transaction_type, 
+        amount, 
+        balance_before,
+        balance_after,
+        description,
+        reference_type,
+        reference_id,
+        booking_id,
+        created_at
+      ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, NOW())`,
+      [
+        wallet.id,
+        'debit',
+        deductAmount,
+        oldBalance,
+        newBalance,
+        description || 'Commission deducted',
+        'commission',
+        bookingId,
+        bookingId
+      ]
+    );
 
-    // Record transaction
-   // Only include reference_id if it's a valid UUID
-const values = [
-  wallet.id,
-  deductAmount,
-  newBalance,
-  description || 'Commission deducted'
-];
-
-let queryText = `INSERT INTO wallet_transactions (
-  wallet_id, type, amount, balance_after, description, created_at
-) VALUES ($1, 'debit', $2, $3, $4, NOW())`;
-
-// Add reference fields only if bookingId is provided and valid UUID format
-if (bookingId && /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(bookingId)) {
-  queryText = `INSERT INTO wallet_transactions (
-    wallet_id, type, amount, balance_after, reference_type, reference_id, description, created_at
-  ) VALUES ($1, 'debit', $2, $3, 'booking', $4, $5, NOW())`;
-  values.splice(3, 0, bookingId); // Insert bookingId before description
-}
-
-await query(queryText, values);
-
-    logger.info(`Commission deducted: ${userId} - ₹${amount}`);
+    logger.info(`Commission deducted: ${userId} - ₹${deductAmount}`, {
+      oldBalance,
+      newBalance,
+      bookingId
+    });
 
     res.status(200).json({
       success: true,
@@ -267,9 +297,6 @@ const getTransactions = async (req, res) => {
 /**
  * Withdraw Money (to bank account)
  */
-/**
- * Withdraw Money (to bank account)
- */
 const withdrawMoney = async (req, res) => {
   try {
     const userId = req.user.userId;
@@ -298,6 +325,7 @@ const withdrawMoney = async (req, res) => {
     }
 
     const wallet = walletResult.rows[0];
+    const oldBalance = parseFloat(wallet.balance);
 
     // Check minimum withdrawal
     if (withdrawAmount < 100) {
@@ -308,36 +336,49 @@ const withdrawMoney = async (req, res) => {
     }
 
     // Check sufficient balance
-    if (wallet.balance < withdrawAmount) {
+    if (oldBalance < withdrawAmount) {
       return res.status(400).json({
         success: false,
         message: 'Insufficient balance',
-        available: wallet.balance
+        available: oldBalance
       });
     }
 
+    const newBalance = oldBalance - withdrawAmount;
+
     // Deduct amount
     const updateResult = await query(
-      'UPDATE wallets SET balance = balance - $1, updated_at = NOW() WHERE id = $2 RETURNING *',
-      [withdrawAmount, wallet.id]
+      'UPDATE wallets SET balance = $1, updated_at = NOW() WHERE id = $2 RETURNING *',
+      [newBalance, wallet.id]
     );
 
-    const newBalance = updateResult.rows[0].balance;
-
-    // Record transaction
+    // Record transaction with balance tracking
     await query(
       `INSERT INTO wallet_transactions (
-        wallet_id, type, amount, balance_after, description, created_at
-      ) VALUES ($1, 'debit', $2, $3, $4, NOW())`,
+        wallet_id, 
+        transaction_type, 
+        amount, 
+        balance_before,
+        balance_after,
+        description, 
+        reference_type,
+        created_at
+      ) VALUES ($1, $2, $3, $4, $5, $6, $7, NOW())`,
       [
         wallet.id,
+        'debit',
         withdrawAmount,
+        oldBalance,
         newBalance,
-        'Withdrawal to bank account'
+        `Withdrawal to bank account (${bankDetails?.accountNumber || 'N/A'})`,
+        'withdrawal'
       ]
     );
 
-    logger.info(`Withdrawal: ${userId} - ₹${withdrawAmount}`);
+    logger.info(`Withdrawal: ${userId} - ₹${withdrawAmount}`, {
+      oldBalance,
+      newBalance
+    });
 
     res.status(200).json({
       success: true,

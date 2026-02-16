@@ -60,5 +60,20 @@ process.on('SIGINT', () => {
   });
 });
 
+
+// Schedule cleanup tasks
+const { runAllCleanupTasks } = require('./services/cleanupService');
+
+// Run cleanup every 24 hours
+setInterval(() => {
+  runAllCleanupTasks().catch(err => {
+    logger.error('Scheduled cleanup failed:', err);
+  });
+}, 24 * 60 * 60 * 1000); // 24 hours
+
+// Run cleanup on startup
+runAllCleanupTasks().catch(err => {
+  logger.error('Startup cleanup failed:', err);
+});
 // Start the server
 startServer();

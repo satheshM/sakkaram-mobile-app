@@ -230,7 +230,7 @@ const verifyAndCompletePayment = async (orderId) => {
       ['paid', 'online', payment.booking_id]
     );
 
-    // Credit owner wallet (base amount - commission)
+   // Credit owner wallet (base amount - commission)
     const ownerAmount = parseFloat(payment.base_amount || 0) - parseFloat(payment.owner_commission || 0);
     
     if (ownerAmount > 0) {
@@ -253,28 +253,42 @@ const verifyAndCompletePayment = async (orderId) => {
           [newBalance, payment.owner_id]
         );
 
-        // Record wallet transaction
+        // Record wallet transaction with new columns
         await client.query(
           `INSERT INTO wallet_transactions (
-            wallet_id, type, amount, 
-            balance_after, description, reference_type, reference_id, created_at
-          ) VALUES ($1, $2, $3, $4, $5, $6, $7, NOW())`,
+            wallet_id, 
+            transaction_type,
+            amount,
+            balance_before,
+            balance_after,
+            description, 
+            reference_type, 
+            reference_id,
+            booking_id,
+            created_at
+          ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, NOW())`,
           [
             wallet.id,
             'credit',
             ownerAmount,
+            oldBalance,
             newBalance,
-            `Payment received for booking`,
+            'Payment received for booking',
             'booking',
+            payment.booking_id,
             payment.booking_id
           ]
         );
 
         logger.info('Owner wallet credited', { 
           ownerId: payment.owner_id, 
-          amount: ownerAmount 
+          amount: ownerAmount,
+          oldBalance,
+          newBalance
         });
-      }
+      } else {
+    logger.warn('Owner wallet not found', { ownerId: payment.owner_id });
+  }
     }
 
     await client.query('COMMIT');

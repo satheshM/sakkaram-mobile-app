@@ -1,0 +1,2215 @@
+{
+  "timestamp": "2026-02-16T04:29:34.515Z",
+  "project": "Sakkaram Backend",
+  "progress": "Day 5 Complete - 20%",
+  "database": {
+    "tables": {
+      "audit_logs": {
+        "columns": [
+          {
+            "column_name": "id",
+            "data_type": "uuid",
+            "is_nullable": "NO",
+            "column_default": "uuid_generate_v4()",
+            "character_maximum_length": null
+          },
+          {
+            "column_name": "user_id",
+            "data_type": "uuid",
+            "is_nullable": "YES",
+            "column_default": null,
+            "character_maximum_length": null
+          },
+          {
+            "column_name": "action",
+            "data_type": "character varying",
+            "is_nullable": "NO",
+            "column_default": null,
+            "character_maximum_length": 100
+          },
+          {
+            "column_name": "entity_type",
+            "data_type": "character varying",
+            "is_nullable": "YES",
+            "column_default": null,
+            "character_maximum_length": 50
+          },
+          {
+            "column_name": "entity_id",
+            "data_type": "uuid",
+            "is_nullable": "YES",
+            "column_default": null,
+            "character_maximum_length": null
+          },
+          {
+            "column_name": "old_values",
+            "data_type": "jsonb",
+            "is_nullable": "YES",
+            "column_default": null,
+            "character_maximum_length": null
+          },
+          {
+            "column_name": "new_values",
+            "data_type": "jsonb",
+            "is_nullable": "YES",
+            "column_default": null,
+            "character_maximum_length": null
+          },
+          {
+            "column_name": "ip_address",
+            "data_type": "inet",
+            "is_nullable": "YES",
+            "column_default": null,
+            "character_maximum_length": null
+          },
+          {
+            "column_name": "user_agent",
+            "data_type": "text",
+            "is_nullable": "YES",
+            "column_default": null,
+            "character_maximum_length": null
+          },
+          {
+            "column_name": "created_at",
+            "data_type": "timestamp without time zone",
+            "is_nullable": "YES",
+            "column_default": "now()",
+            "character_maximum_length": null
+          }
+        ],
+        "rowCount": 0,
+        "indexes": [
+          {
+            "indexname": "audit_logs_pkey",
+            "indexdef": "CREATE UNIQUE INDEX audit_logs_pkey ON public.audit_logs USING btree (id)"
+          },
+          {
+            "indexname": "idx_audit_logs_user",
+            "indexdef": "CREATE INDEX idx_audit_logs_user ON public.audit_logs USING btree (user_id)"
+          },
+          {
+            "indexname": "idx_audit_logs_action",
+            "indexdef": "CREATE INDEX idx_audit_logs_action ON public.audit_logs USING btree (action)"
+          },
+          {
+            "indexname": "idx_audit_logs_created",
+            "indexdef": "CREATE INDEX idx_audit_logs_created ON public.audit_logs USING btree (created_at DESC)"
+          }
+        ]
+      },
+      "bookings": {
+        "columns": [
+          {
+            "column_name": "id",
+            "data_type": "uuid",
+            "is_nullable": "NO",
+            "column_default": "uuid_generate_v4()",
+            "character_maximum_length": null
+          },
+          {
+            "column_name": "booking_number",
+            "data_type": "character varying",
+            "is_nullable": "NO",
+            "column_default": null,
+            "character_maximum_length": 50
+          },
+          {
+            "column_name": "farmer_id",
+            "data_type": "uuid",
+            "is_nullable": "YES",
+            "column_default": null,
+            "character_maximum_length": null
+          },
+          {
+            "column_name": "vehicle_id",
+            "data_type": "uuid",
+            "is_nullable": "YES",
+            "column_default": null,
+            "character_maximum_length": null
+          },
+          {
+            "column_name": "owner_id",
+            "data_type": "uuid",
+            "is_nullable": "YES",
+            "column_default": null,
+            "character_maximum_length": null
+          },
+          {
+            "column_name": "start_date",
+            "data_type": "date",
+            "is_nullable": "YES",
+            "column_default": null,
+            "character_maximum_length": null
+          },
+          {
+            "column_name": "end_date",
+            "data_type": "date",
+            "is_nullable": "YES",
+            "column_default": null,
+            "character_maximum_length": null
+          },
+          {
+            "column_name": "start_time",
+            "data_type": "time without time zone",
+            "is_nullable": "YES",
+            "column_default": null,
+            "character_maximum_length": null
+          },
+          {
+            "column_name": "end_time",
+            "data_type": "time without time zone",
+            "is_nullable": "YES",
+            "column_default": null,
+            "character_maximum_length": null
+          },
+          {
+            "column_name": "duration_hours",
+            "data_type": "integer",
+            "is_nullable": "YES",
+            "column_default": null,
+            "character_maximum_length": null
+          },
+          {
+            "column_name": "total_amount",
+            "data_type": "numeric",
+            "is_nullable": "YES",
+            "column_default": null,
+            "character_maximum_length": null
+          },
+          {
+            "column_name": "service_location",
+            "data_type": "jsonb",
+            "is_nullable": "YES",
+            "column_default": null,
+            "character_maximum_length": null
+          },
+          {
+            "column_name": "service_type",
+            "data_type": "character varying",
+            "is_nullable": "YES",
+            "column_default": null,
+            "character_maximum_length": 100
+          },
+          {
+            "column_name": "status",
+            "data_type": "character varying",
+            "is_nullable": "YES",
+            "column_default": "'pending'::character varying",
+            "character_maximum_length": 50
+          },
+          {
+            "column_name": "payment_status",
+            "data_type": "character varying",
+            "is_nullable": "YES",
+            "column_default": "'pending'::character varying",
+            "character_maximum_length": 50
+          },
+          {
+            "column_name": "payment_method",
+            "data_type": "character varying",
+            "is_nullable": "YES",
+            "column_default": null,
+            "character_maximum_length": 50
+          },
+          {
+            "column_name": "advance_paid",
+            "data_type": "numeric",
+            "is_nullable": "YES",
+            "column_default": "0",
+            "character_maximum_length": null
+          },
+          {
+            "column_name": "started_at",
+            "data_type": "timestamp without time zone",
+            "is_nullable": "YES",
+            "column_default": null,
+            "character_maximum_length": null
+          },
+          {
+            "column_name": "completed_at",
+            "data_type": "timestamp without time zone",
+            "is_nullable": "YES",
+            "column_default": null,
+            "character_maximum_length": null
+          },
+          {
+            "column_name": "cancelled_at",
+            "data_type": "timestamp without time zone",
+            "is_nullable": "YES",
+            "column_default": null,
+            "character_maximum_length": null
+          },
+          {
+            "column_name": "cancellation_reason",
+            "data_type": "text",
+            "is_nullable": "YES",
+            "column_default": null,
+            "character_maximum_length": null
+          },
+          {
+            "column_name": "farmer_notes",
+            "data_type": "text",
+            "is_nullable": "YES",
+            "column_default": null,
+            "character_maximum_length": null
+          },
+          {
+            "column_name": "owner_notes",
+            "data_type": "text",
+            "is_nullable": "YES",
+            "column_default": null,
+            "character_maximum_length": null
+          },
+          {
+            "column_name": "created_at",
+            "data_type": "timestamp without time zone",
+            "is_nullable": "YES",
+            "column_default": "now()",
+            "character_maximum_length": null
+          },
+          {
+            "column_name": "updated_at",
+            "data_type": "timestamp without time zone",
+            "is_nullable": "YES",
+            "column_default": "now()",
+            "character_maximum_length": null
+          },
+          {
+            "column_name": "service_category",
+            "data_type": "character varying",
+            "is_nullable": "YES",
+            "column_default": null,
+            "character_maximum_length": 100
+          },
+          {
+            "column_name": "pricing_type",
+            "data_type": "character varying",
+            "is_nullable": "YES",
+            "column_default": null,
+            "character_maximum_length": 50
+          },
+          {
+            "column_name": "hourly_rate",
+            "data_type": "numeric",
+            "is_nullable": "YES",
+            "column_default": null,
+            "character_maximum_length": null
+          },
+          {
+            "column_name": "per_acre_rate",
+            "data_type": "numeric",
+            "is_nullable": "YES",
+            "column_default": null,
+            "character_maximum_length": null
+          },
+          {
+            "column_name": "fixed_price",
+            "data_type": "numeric",
+            "is_nullable": "YES",
+            "column_default": null,
+            "character_maximum_length": null
+          },
+          {
+            "column_name": "land_size_acres",
+            "data_type": "numeric",
+            "is_nullable": "YES",
+            "column_default": null,
+            "character_maximum_length": null
+          },
+          {
+            "column_name": "estimated_hours",
+            "data_type": "integer",
+            "is_nullable": "YES",
+            "column_default": null,
+            "character_maximum_length": null
+          },
+          {
+            "column_name": "actual_hours",
+            "data_type": "numeric",
+            "is_nullable": "YES",
+            "column_default": null,
+            "character_maximum_length": null
+          },
+          {
+            "column_name": "base_amount",
+            "data_type": "numeric",
+            "is_nullable": "YES",
+            "column_default": null,
+            "character_maximum_length": null
+          },
+          {
+            "column_name": "farmer_service_fee",
+            "data_type": "numeric",
+            "is_nullable": "YES",
+            "column_default": null,
+            "character_maximum_length": null
+          },
+          {
+            "column_name": "owner_commission",
+            "data_type": "numeric",
+            "is_nullable": "YES",
+            "column_default": null,
+            "character_maximum_length": null
+          },
+          {
+            "column_name": "platform_earning",
+            "data_type": "numeric",
+            "is_nullable": "YES",
+            "column_default": null,
+            "character_maximum_length": null
+          },
+          {
+            "column_name": "total_farmer_pays",
+            "data_type": "numeric",
+            "is_nullable": "YES",
+            "column_default": null,
+            "character_maximum_length": null
+          },
+          {
+            "column_name": "total_owner_receives",
+            "data_type": "numeric",
+            "is_nullable": "YES",
+            "column_default": null,
+            "character_maximum_length": null
+          },
+          {
+            "column_name": "farmer_location_lat",
+            "data_type": "numeric",
+            "is_nullable": "YES",
+            "column_default": null,
+            "character_maximum_length": null
+          },
+          {
+            "column_name": "farmer_location_lng",
+            "data_type": "numeric",
+            "is_nullable": "YES",
+            "column_default": null,
+            "character_maximum_length": null
+          },
+          {
+            "column_name": "farmer_location_address",
+            "data_type": "text",
+            "is_nullable": "YES",
+            "column_default": null,
+            "character_maximum_length": null
+          },
+          {
+            "column_name": "distance_km",
+            "data_type": "numeric",
+            "is_nullable": "YES",
+            "column_default": null,
+            "character_maximum_length": null
+          },
+          {
+            "column_name": "work_started_at",
+            "data_type": "timestamp without time zone",
+            "is_nullable": "YES",
+            "column_default": null,
+            "character_maximum_length": null
+          },
+          {
+            "column_name": "work_completed_at",
+            "data_type": "timestamp without time zone",
+            "is_nullable": "YES",
+            "column_default": null,
+            "character_maximum_length": null
+          },
+          {
+            "column_name": "completion_notes",
+            "data_type": "text",
+            "is_nullable": "YES",
+            "column_default": null,
+            "character_maximum_length": null
+          },
+          {
+            "column_name": "farmer_service_fee_paid",
+            "data_type": "boolean",
+            "is_nullable": "YES",
+            "column_default": "false",
+            "character_maximum_length": null
+          },
+          {
+            "column_name": "farmer_payment_screenshot",
+            "data_type": "text",
+            "is_nullable": "YES",
+            "column_default": null,
+            "character_maximum_length": null
+          },
+          {
+            "column_name": "owner_commission_deducted",
+            "data_type": "boolean",
+            "is_nullable": "YES",
+            "column_default": "false",
+            "character_maximum_length": null
+          },
+          {
+            "column_name": "scheduled_date",
+            "data_type": "date",
+            "is_nullable": "YES",
+            "column_default": null,
+            "character_maximum_length": null
+          },
+          {
+            "column_name": "scheduled_time",
+            "data_type": "time without time zone",
+            "is_nullable": "YES",
+            "column_default": null,
+            "character_maximum_length": null
+          },
+          {
+            "column_name": "cancelled_by",
+            "data_type": "character varying",
+            "is_nullable": "YES",
+            "column_default": null,
+            "character_maximum_length": 50
+          },
+          {
+            "column_name": "notes",
+            "data_type": "text",
+            "is_nullable": "YES",
+            "column_default": null,
+            "character_maximum_length": null
+          },
+          {
+            "column_name": "deleted_at",
+            "data_type": "timestamp without time zone",
+            "is_nullable": "YES",
+            "column_default": null,
+            "character_maximum_length": null
+          }
+        ],
+        "rowCount": 3,
+        "indexes": [
+          {
+            "indexname": "bookings_pkey",
+            "indexdef": "CREATE UNIQUE INDEX bookings_pkey ON public.bookings USING btree (id)"
+          },
+          {
+            "indexname": "bookings_booking_number_key",
+            "indexdef": "CREATE UNIQUE INDEX bookings_booking_number_key ON public.bookings USING btree (booking_number)"
+          },
+          {
+            "indexname": "idx_bookings_farmer",
+            "indexdef": "CREATE INDEX idx_bookings_farmer ON public.bookings USING btree (farmer_id)"
+          },
+          {
+            "indexname": "idx_bookings_vehicle",
+            "indexdef": "CREATE INDEX idx_bookings_vehicle ON public.bookings USING btree (vehicle_id)"
+          },
+          {
+            "indexname": "idx_bookings_owner",
+            "indexdef": "CREATE INDEX idx_bookings_owner ON public.bookings USING btree (owner_id)"
+          },
+          {
+            "indexname": "idx_bookings_status",
+            "indexdef": "CREATE INDEX idx_bookings_status ON public.bookings USING btree (status)"
+          },
+          {
+            "indexname": "idx_bookings_payment_status",
+            "indexdef": "CREATE INDEX idx_bookings_payment_status ON public.bookings USING btree (payment_status)"
+          },
+          {
+            "indexname": "idx_bookings_dates",
+            "indexdef": "CREATE INDEX idx_bookings_dates ON public.bookings USING btree (start_date, end_date)"
+          },
+          {
+            "indexname": "idx_bookings_number",
+            "indexdef": "CREATE INDEX idx_bookings_number ON public.bookings USING btree (booking_number)"
+          },
+          {
+            "indexname": "idx_bookings_service_type",
+            "indexdef": "CREATE INDEX idx_bookings_service_type ON public.bookings USING btree (service_type)"
+          },
+          {
+            "indexname": "idx_bookings_farmer_location",
+            "indexdef": "CREATE INDEX idx_bookings_farmer_location ON public.bookings USING btree (farmer_location_lat, farmer_location_lng)"
+          }
+        ]
+      },
+      "earnings": {
+        "columns": [
+          {
+            "column_name": "id",
+            "data_type": "uuid",
+            "is_nullable": "NO",
+            "column_default": "uuid_generate_v4()",
+            "character_maximum_length": null
+          },
+          {
+            "column_name": "owner_id",
+            "data_type": "uuid",
+            "is_nullable": "YES",
+            "column_default": null,
+            "character_maximum_length": null
+          },
+          {
+            "column_name": "booking_id",
+            "data_type": "uuid",
+            "is_nullable": "YES",
+            "column_default": null,
+            "character_maximum_length": null
+          },
+          {
+            "column_name": "amount",
+            "data_type": "numeric",
+            "is_nullable": "NO",
+            "column_default": null,
+            "character_maximum_length": null
+          },
+          {
+            "column_name": "platform_fee",
+            "data_type": "numeric",
+            "is_nullable": "YES",
+            "column_default": "0",
+            "character_maximum_length": null
+          },
+          {
+            "column_name": "net_amount",
+            "data_type": "numeric",
+            "is_nullable": "NO",
+            "column_default": null,
+            "character_maximum_length": null
+          },
+          {
+            "column_name": "status",
+            "data_type": "character varying",
+            "is_nullable": "YES",
+            "column_default": "'pending'::character varying",
+            "character_maximum_length": 50
+          },
+          {
+            "column_name": "settled_at",
+            "data_type": "timestamp without time zone",
+            "is_nullable": "YES",
+            "column_default": null,
+            "character_maximum_length": null
+          },
+          {
+            "column_name": "created_at",
+            "data_type": "timestamp without time zone",
+            "is_nullable": "YES",
+            "column_default": "now()",
+            "character_maximum_length": null
+          }
+        ],
+        "rowCount": 0,
+        "indexes": [
+          {
+            "indexname": "earnings_pkey",
+            "indexdef": "CREATE UNIQUE INDEX earnings_pkey ON public.earnings USING btree (id)"
+          },
+          {
+            "indexname": "idx_earnings_owner",
+            "indexdef": "CREATE INDEX idx_earnings_owner ON public.earnings USING btree (owner_id)"
+          },
+          {
+            "indexname": "idx_earnings_booking",
+            "indexdef": "CREATE INDEX idx_earnings_booking ON public.earnings USING btree (booking_id)"
+          },
+          {
+            "indexname": "idx_earnings_status",
+            "indexdef": "CREATE INDEX idx_earnings_status ON public.earnings USING btree (status)"
+          }
+        ]
+      },
+      "notifications": {
+        "columns": [
+          {
+            "column_name": "id",
+            "data_type": "uuid",
+            "is_nullable": "NO",
+            "column_default": "uuid_generate_v4()",
+            "character_maximum_length": null
+          },
+          {
+            "column_name": "user_id",
+            "data_type": "uuid",
+            "is_nullable": "YES",
+            "column_default": null,
+            "character_maximum_length": null
+          },
+          {
+            "column_name": "title",
+            "data_type": "character varying",
+            "is_nullable": "NO",
+            "column_default": null,
+            "character_maximum_length": 255
+          },
+          {
+            "column_name": "message",
+            "data_type": "text",
+            "is_nullable": "NO",
+            "column_default": null,
+            "character_maximum_length": null
+          },
+          {
+            "column_name": "type",
+            "data_type": "character varying",
+            "is_nullable": "YES",
+            "column_default": null,
+            "character_maximum_length": 50
+          },
+          {
+            "column_name": "is_read",
+            "data_type": "boolean",
+            "is_nullable": "YES",
+            "column_default": "false",
+            "character_maximum_length": null
+          },
+          {
+            "column_name": "read_at",
+            "data_type": "timestamp without time zone",
+            "is_nullable": "YES",
+            "column_default": null,
+            "character_maximum_length": null
+          },
+          {
+            "column_name": "reference_type",
+            "data_type": "character varying",
+            "is_nullable": "YES",
+            "column_default": null,
+            "character_maximum_length": 50
+          },
+          {
+            "column_name": "reference_id",
+            "data_type": "uuid",
+            "is_nullable": "YES",
+            "column_default": null,
+            "character_maximum_length": null
+          },
+          {
+            "column_name": "created_at",
+            "data_type": "timestamp without time zone",
+            "is_nullable": "YES",
+            "column_default": "now()",
+            "character_maximum_length": null
+          }
+        ],
+        "rowCount": 0,
+        "indexes": [
+          {
+            "indexname": "notifications_pkey",
+            "indexdef": "CREATE UNIQUE INDEX notifications_pkey ON public.notifications USING btree (id)"
+          },
+          {
+            "indexname": "idx_notifications_user",
+            "indexdef": "CREATE INDEX idx_notifications_user ON public.notifications USING btree (user_id)"
+          },
+          {
+            "indexname": "idx_notifications_read",
+            "indexdef": "CREATE INDEX idx_notifications_read ON public.notifications USING btree (is_read)"
+          },
+          {
+            "indexname": "idx_notifications_created",
+            "indexdef": "CREATE INDEX idx_notifications_created ON public.notifications USING btree (created_at DESC)"
+          }
+        ]
+      },
+      "payments": {
+        "columns": [
+          {
+            "column_name": "id",
+            "data_type": "uuid",
+            "is_nullable": "NO",
+            "column_default": "uuid_generate_v4()",
+            "character_maximum_length": null
+          },
+          {
+            "column_name": "payment_id",
+            "data_type": "character varying",
+            "is_nullable": "NO",
+            "column_default": null,
+            "character_maximum_length": 255
+          },
+          {
+            "column_name": "booking_id",
+            "data_type": "uuid",
+            "is_nullable": "YES",
+            "column_default": null,
+            "character_maximum_length": null
+          },
+          {
+            "column_name": "user_id",
+            "data_type": "uuid",
+            "is_nullable": "YES",
+            "column_default": null,
+            "character_maximum_length": null
+          },
+          {
+            "column_name": "amount",
+            "data_type": "numeric",
+            "is_nullable": "NO",
+            "column_default": null,
+            "character_maximum_length": null
+          },
+          {
+            "column_name": "currency",
+            "data_type": "character varying",
+            "is_nullable": "YES",
+            "column_default": "'INR'::character varying",
+            "character_maximum_length": 10
+          },
+          {
+            "column_name": "payment_method",
+            "data_type": "character varying",
+            "is_nullable": "YES",
+            "column_default": null,
+            "character_maximum_length": 50
+          },
+          {
+            "column_name": "payment_gateway",
+            "data_type": "character varying",
+            "is_nullable": "YES",
+            "column_default": "'razorpay'::character varying",
+            "character_maximum_length": 50
+          },
+          {
+            "column_name": "razorpay_order_id",
+            "data_type": "character varying",
+            "is_nullable": "YES",
+            "column_default": null,
+            "character_maximum_length": 255
+          },
+          {
+            "column_name": "razorpay_payment_id",
+            "data_type": "character varying",
+            "is_nullable": "YES",
+            "column_default": null,
+            "character_maximum_length": 255
+          },
+          {
+            "column_name": "razorpay_signature",
+            "data_type": "character varying",
+            "is_nullable": "YES",
+            "column_default": null,
+            "character_maximum_length": 255
+          },
+          {
+            "column_name": "status",
+            "data_type": "character varying",
+            "is_nullable": "YES",
+            "column_default": "'pending'::character varying",
+            "character_maximum_length": 50
+          },
+          {
+            "column_name": "refund_amount",
+            "data_type": "numeric",
+            "is_nullable": "YES",
+            "column_default": null,
+            "character_maximum_length": null
+          },
+          {
+            "column_name": "refund_reason",
+            "data_type": "text",
+            "is_nullable": "YES",
+            "column_default": null,
+            "character_maximum_length": null
+          },
+          {
+            "column_name": "refunded_at",
+            "data_type": "timestamp without time zone",
+            "is_nullable": "YES",
+            "column_default": null,
+            "character_maximum_length": null
+          },
+          {
+            "column_name": "metadata",
+            "data_type": "jsonb",
+            "is_nullable": "YES",
+            "column_default": null,
+            "character_maximum_length": null
+          },
+          {
+            "column_name": "created_at",
+            "data_type": "timestamp without time zone",
+            "is_nullable": "YES",
+            "column_default": "now()",
+            "character_maximum_length": null
+          },
+          {
+            "column_name": "updated_at",
+            "data_type": "timestamp without time zone",
+            "is_nullable": "YES",
+            "column_default": "now()",
+            "character_maximum_length": null
+          },
+          {
+            "column_name": "transaction_id",
+            "data_type": "character varying",
+            "is_nullable": "YES",
+            "column_default": null,
+            "character_maximum_length": 255
+          },
+          {
+            "column_name": "gateway_response",
+            "data_type": "jsonb",
+            "is_nullable": "YES",
+            "column_default": null,
+            "character_maximum_length": null
+          },
+          {
+            "column_name": "description",
+            "data_type": "text",
+            "is_nullable": "YES",
+            "column_default": null,
+            "character_maximum_length": null
+          }
+        ],
+        "rowCount": 4,
+        "indexes": [
+          {
+            "indexname": "payments_pkey",
+            "indexdef": "CREATE UNIQUE INDEX payments_pkey ON public.payments USING btree (id)"
+          },
+          {
+            "indexname": "payments_payment_id_key",
+            "indexdef": "CREATE UNIQUE INDEX payments_payment_id_key ON public.payments USING btree (payment_id)"
+          },
+          {
+            "indexname": "idx_payments_booking",
+            "indexdef": "CREATE INDEX idx_payments_booking ON public.payments USING btree (booking_id)"
+          },
+          {
+            "indexname": "idx_payments_user",
+            "indexdef": "CREATE INDEX idx_payments_user ON public.payments USING btree (user_id)"
+          },
+          {
+            "indexname": "idx_payments_status",
+            "indexdef": "CREATE INDEX idx_payments_status ON public.payments USING btree (status)"
+          },
+          {
+            "indexname": "idx_payments_payment_id",
+            "indexdef": "CREATE INDEX idx_payments_payment_id ON public.payments USING btree (payment_id)"
+          },
+          {
+            "indexname": "idx_payments_transaction",
+            "indexdef": "CREATE INDEX idx_payments_transaction ON public.payments USING btree (transaction_id)"
+          },
+          {
+            "indexname": "idx_payments_gateway",
+            "indexdef": "CREATE INDEX idx_payments_gateway ON public.payments USING btree (payment_gateway)"
+          }
+        ]
+      },
+      "reviews": {
+        "columns": [
+          {
+            "column_name": "id",
+            "data_type": "uuid",
+            "is_nullable": "NO",
+            "column_default": "uuid_generate_v4()",
+            "character_maximum_length": null
+          },
+          {
+            "column_name": "booking_id",
+            "data_type": "uuid",
+            "is_nullable": "YES",
+            "column_default": null,
+            "character_maximum_length": null
+          },
+          {
+            "column_name": "vehicle_id",
+            "data_type": "uuid",
+            "is_nullable": "YES",
+            "column_default": null,
+            "character_maximum_length": null
+          },
+          {
+            "column_name": "farmer_id",
+            "data_type": "uuid",
+            "is_nullable": "YES",
+            "column_default": null,
+            "character_maximum_length": null
+          },
+          {
+            "column_name": "owner_id",
+            "data_type": "uuid",
+            "is_nullable": "YES",
+            "column_default": null,
+            "character_maximum_length": null
+          },
+          {
+            "column_name": "rating",
+            "data_type": "integer",
+            "is_nullable": "NO",
+            "column_default": null,
+            "character_maximum_length": null
+          },
+          {
+            "column_name": "comment",
+            "data_type": "text",
+            "is_nullable": "YES",
+            "column_default": null,
+            "character_maximum_length": null
+          },
+          {
+            "column_name": "created_at",
+            "data_type": "timestamp without time zone",
+            "is_nullable": "YES",
+            "column_default": "now()",
+            "character_maximum_length": null
+          }
+        ],
+        "rowCount": 0,
+        "indexes": [
+          {
+            "indexname": "reviews_pkey",
+            "indexdef": "CREATE UNIQUE INDEX reviews_pkey ON public.reviews USING btree (id)"
+          },
+          {
+            "indexname": "reviews_booking_id_key",
+            "indexdef": "CREATE UNIQUE INDEX reviews_booking_id_key ON public.reviews USING btree (booking_id)"
+          },
+          {
+            "indexname": "idx_reviews_vehicle",
+            "indexdef": "CREATE INDEX idx_reviews_vehicle ON public.reviews USING btree (vehicle_id)"
+          },
+          {
+            "indexname": "idx_reviews_rating",
+            "indexdef": "CREATE INDEX idx_reviews_rating ON public.reviews USING btree (rating)"
+          },
+          {
+            "indexname": "idx_reviews_booking",
+            "indexdef": "CREATE INDEX idx_reviews_booking ON public.reviews USING btree (booking_id)"
+          }
+        ]
+      },
+      "sessions": {
+        "columns": [
+          {
+            "column_name": "id",
+            "data_type": "uuid",
+            "is_nullable": "NO",
+            "column_default": "uuid_generate_v4()",
+            "character_maximum_length": null
+          },
+          {
+            "column_name": "user_id",
+            "data_type": "uuid",
+            "is_nullable": "YES",
+            "column_default": null,
+            "character_maximum_length": null
+          },
+          {
+            "column_name": "refresh_token",
+            "data_type": "character varying",
+            "is_nullable": "NO",
+            "column_default": null,
+            "character_maximum_length": 500
+          },
+          {
+            "column_name": "device_info",
+            "data_type": "jsonb",
+            "is_nullable": "YES",
+            "column_default": null,
+            "character_maximum_length": null
+          },
+          {
+            "column_name": "ip_address",
+            "data_type": "inet",
+            "is_nullable": "YES",
+            "column_default": null,
+            "character_maximum_length": null
+          },
+          {
+            "column_name": "user_agent",
+            "data_type": "text",
+            "is_nullable": "YES",
+            "column_default": null,
+            "character_maximum_length": null
+          },
+          {
+            "column_name": "expires_at",
+            "data_type": "timestamp without time zone",
+            "is_nullable": "NO",
+            "column_default": null,
+            "character_maximum_length": null
+          },
+          {
+            "column_name": "created_at",
+            "data_type": "timestamp without time zone",
+            "is_nullable": "YES",
+            "column_default": "now()",
+            "character_maximum_length": null
+          }
+        ],
+        "rowCount": 28,
+        "indexes": [
+          {
+            "indexname": "sessions_pkey",
+            "indexdef": "CREATE UNIQUE INDEX sessions_pkey ON public.sessions USING btree (id)"
+          },
+          {
+            "indexname": "sessions_refresh_token_key",
+            "indexdef": "CREATE UNIQUE INDEX sessions_refresh_token_key ON public.sessions USING btree (refresh_token)"
+          },
+          {
+            "indexname": "idx_sessions_user",
+            "indexdef": "CREATE INDEX idx_sessions_user ON public.sessions USING btree (user_id)"
+          },
+          {
+            "indexname": "idx_sessions_token",
+            "indexdef": "CREATE INDEX idx_sessions_token ON public.sessions USING btree (refresh_token)"
+          },
+          {
+            "indexname": "idx_sessions_expires",
+            "indexdef": "CREATE INDEX idx_sessions_expires ON public.sessions USING btree (expires_at)"
+          }
+        ]
+      },
+      "users": {
+        "columns": [
+          {
+            "column_name": "id",
+            "data_type": "uuid",
+            "is_nullable": "NO",
+            "column_default": "uuid_generate_v4()",
+            "character_maximum_length": null
+          },
+          {
+            "column_name": "email",
+            "data_type": "character varying",
+            "is_nullable": "YES",
+            "column_default": null,
+            "character_maximum_length": 255
+          },
+          {
+            "column_name": "password_hash",
+            "data_type": "character varying",
+            "is_nullable": "YES",
+            "column_default": null,
+            "character_maximum_length": 255
+          },
+          {
+            "column_name": "phone_number",
+            "data_type": "character varying",
+            "is_nullable": "NO",
+            "column_default": null,
+            "character_maximum_length": 20
+          },
+          {
+            "column_name": "role",
+            "data_type": "character varying",
+            "is_nullable": "NO",
+            "column_default": null,
+            "character_maximum_length": 20
+          },
+          {
+            "column_name": "full_name",
+            "data_type": "character varying",
+            "is_nullable": "YES",
+            "column_default": null,
+            "character_maximum_length": 255
+          },
+          {
+            "column_name": "profile_image_url",
+            "data_type": "text",
+            "is_nullable": "YES",
+            "column_default": null,
+            "character_maximum_length": null
+          },
+          {
+            "column_name": "address",
+            "data_type": "jsonb",
+            "is_nullable": "YES",
+            "column_default": null,
+            "character_maximum_length": null
+          },
+          {
+            "column_name": "is_verified",
+            "data_type": "boolean",
+            "is_nullable": "YES",
+            "column_default": "false",
+            "character_maximum_length": null
+          },
+          {
+            "column_name": "is_active",
+            "data_type": "boolean",
+            "is_nullable": "YES",
+            "column_default": "true",
+            "character_maximum_length": null
+          },
+          {
+            "column_name": "failed_login_attempts",
+            "data_type": "integer",
+            "is_nullable": "YES",
+            "column_default": "0",
+            "character_maximum_length": null
+          },
+          {
+            "column_name": "account_locked_until",
+            "data_type": "timestamp without time zone",
+            "is_nullable": "YES",
+            "column_default": null,
+            "character_maximum_length": null
+          },
+          {
+            "column_name": "last_login_at",
+            "data_type": "timestamp without time zone",
+            "is_nullable": "YES",
+            "column_default": null,
+            "character_maximum_length": null
+          },
+          {
+            "column_name": "created_at",
+            "data_type": "timestamp without time zone",
+            "is_nullable": "YES",
+            "column_default": "now()",
+            "character_maximum_length": null
+          },
+          {
+            "column_name": "updated_at",
+            "data_type": "timestamp without time zone",
+            "is_nullable": "YES",
+            "column_default": "now()",
+            "character_maximum_length": null
+          },
+          {
+            "column_name": "deleted_at",
+            "data_type": "timestamp without time zone",
+            "is_nullable": "YES",
+            "column_default": null,
+            "character_maximum_length": null
+          },
+          {
+            "column_name": "phone_verified",
+            "data_type": "boolean",
+            "is_nullable": "YES",
+            "column_default": "false",
+            "character_maximum_length": null
+          },
+          {
+            "column_name": "email_verified",
+            "data_type": "boolean",
+            "is_nullable": "YES",
+            "column_default": "false",
+            "character_maximum_length": null
+          },
+          {
+            "column_name": "otp_code",
+            "data_type": "character varying",
+            "is_nullable": "YES",
+            "column_default": null,
+            "character_maximum_length": 6
+          },
+          {
+            "column_name": "otp_expires_at",
+            "data_type": "timestamp without time zone",
+            "is_nullable": "YES",
+            "column_default": null,
+            "character_maximum_length": null
+          },
+          {
+            "column_name": "otp_attempts",
+            "data_type": "integer",
+            "is_nullable": "YES",
+            "column_default": "0",
+            "character_maximum_length": null
+          },
+          {
+            "column_name": "last_otp_sent_at",
+            "data_type": "timestamp without time zone",
+            "is_nullable": "YES",
+            "column_default": null,
+            "character_maximum_length": null
+          }
+        ],
+        "rowCount": 2,
+        "indexes": [
+          {
+            "indexname": "users_pkey",
+            "indexdef": "CREATE UNIQUE INDEX users_pkey ON public.users USING btree (id)"
+          },
+          {
+            "indexname": "users_phone_number_key",
+            "indexdef": "CREATE UNIQUE INDEX users_phone_number_key ON public.users USING btree (phone_number)"
+          },
+          {
+            "indexname": "idx_users_role",
+            "indexdef": "CREATE INDEX idx_users_role ON public.users USING btree (role)"
+          },
+          {
+            "indexname": "idx_users_active",
+            "indexdef": "CREATE INDEX idx_users_active ON public.users USING btree (is_active)"
+          },
+          {
+            "indexname": "idx_users_email_unique",
+            "indexdef": "CREATE UNIQUE INDEX idx_users_email_unique ON public.users USING btree (email) WHERE (email IS NOT NULL)"
+          },
+          {
+            "indexname": "idx_users_phone_verified",
+            "indexdef": "CREATE INDEX idx_users_phone_verified ON public.users USING btree (phone_verified)"
+          },
+          {
+            "indexname": "idx_users_phone_unique",
+            "indexdef": "CREATE UNIQUE INDEX idx_users_phone_unique ON public.users USING btree (phone_number)"
+          }
+        ]
+      },
+      "vehicles": {
+        "columns": [
+          {
+            "column_name": "id",
+            "data_type": "uuid",
+            "is_nullable": "NO",
+            "column_default": "uuid_generate_v4()",
+            "character_maximum_length": null
+          },
+          {
+            "column_name": "owner_id",
+            "data_type": "uuid",
+            "is_nullable": "YES",
+            "column_default": null,
+            "character_maximum_length": null
+          },
+          {
+            "column_name": "name",
+            "data_type": "character varying",
+            "is_nullable": "NO",
+            "column_default": null,
+            "character_maximum_length": 255
+          },
+          {
+            "column_name": "type",
+            "data_type": "character varying",
+            "is_nullable": "NO",
+            "column_default": null,
+            "character_maximum_length": 100
+          },
+          {
+            "column_name": "model",
+            "data_type": "character varying",
+            "is_nullable": "YES",
+            "column_default": null,
+            "character_maximum_length": 100
+          },
+          {
+            "column_name": "registration_number",
+            "data_type": "character varying",
+            "is_nullable": "YES",
+            "column_default": null,
+            "character_maximum_length": 50
+          },
+          {
+            "column_name": "specifications",
+            "data_type": "jsonb",
+            "is_nullable": "YES",
+            "column_default": null,
+            "character_maximum_length": null
+          },
+          {
+            "column_name": "capacity",
+            "data_type": "character varying",
+            "is_nullable": "YES",
+            "column_default": null,
+            "character_maximum_length": 100
+          },
+          {
+            "column_name": "hourly_rate",
+            "data_type": "numeric",
+            "is_nullable": "YES",
+            "column_default": null,
+            "character_maximum_length": null
+          },
+          {
+            "column_name": "location",
+            "data_type": "jsonb",
+            "is_nullable": "YES",
+            "column_default": null,
+            "character_maximum_length": null
+          },
+          {
+            "column_name": "service_radius_km",
+            "data_type": "integer",
+            "is_nullable": "YES",
+            "column_default": "50",
+            "character_maximum_length": null
+          },
+          {
+            "column_name": "images",
+            "data_type": "jsonb",
+            "is_nullable": "YES",
+            "column_default": null,
+            "character_maximum_length": null
+          },
+          {
+            "column_name": "documents",
+            "data_type": "jsonb",
+            "is_nullable": "YES",
+            "column_default": null,
+            "character_maximum_length": null
+          },
+          {
+            "column_name": "is_available",
+            "data_type": "boolean",
+            "is_nullable": "YES",
+            "column_default": "true",
+            "character_maximum_length": null
+          },
+          {
+            "column_name": "availability_schedule",
+            "data_type": "jsonb",
+            "is_nullable": "YES",
+            "column_default": null,
+            "character_maximum_length": null
+          },
+          {
+            "column_name": "average_rating",
+            "data_type": "numeric",
+            "is_nullable": "YES",
+            "column_default": "0",
+            "character_maximum_length": null
+          },
+          {
+            "column_name": "total_bookings",
+            "data_type": "integer",
+            "is_nullable": "YES",
+            "column_default": "0",
+            "character_maximum_length": null
+          },
+          {
+            "column_name": "total_reviews",
+            "data_type": "integer",
+            "is_nullable": "YES",
+            "column_default": "0",
+            "character_maximum_length": null
+          },
+          {
+            "column_name": "created_at",
+            "data_type": "timestamp without time zone",
+            "is_nullable": "YES",
+            "column_default": "now()",
+            "character_maximum_length": null
+          },
+          {
+            "column_name": "updated_at",
+            "data_type": "timestamp without time zone",
+            "is_nullable": "YES",
+            "column_default": "now()",
+            "character_maximum_length": null
+          },
+          {
+            "column_name": "deleted_at",
+            "data_type": "timestamp without time zone",
+            "is_nullable": "YES",
+            "column_default": null,
+            "character_maximum_length": null
+          },
+          {
+            "column_name": "location_lat",
+            "data_type": "numeric",
+            "is_nullable": "YES",
+            "column_default": null,
+            "character_maximum_length": null
+          },
+          {
+            "column_name": "location_lng",
+            "data_type": "numeric",
+            "is_nullable": "YES",
+            "column_default": null,
+            "character_maximum_length": null
+          },
+          {
+            "column_name": "location_address",
+            "data_type": "text",
+            "is_nullable": "YES",
+            "column_default": null,
+            "character_maximum_length": null
+          },
+          {
+            "column_name": "services_offered",
+            "data_type": "jsonb",
+            "is_nullable": "YES",
+            "column_default": null,
+            "character_maximum_length": null
+          },
+          {
+            "column_name": "pricing_type",
+            "data_type": "character varying",
+            "is_nullable": "YES",
+            "column_default": "'hourly'::character varying",
+            "character_maximum_length": 50
+          },
+          {
+            "column_name": "base_price",
+            "data_type": "numeric",
+            "is_nullable": "YES",
+            "column_default": null,
+            "character_maximum_length": null
+          }
+        ],
+        "rowCount": 1,
+        "indexes": [
+          {
+            "indexname": "vehicles_pkey",
+            "indexdef": "CREATE UNIQUE INDEX vehicles_pkey ON public.vehicles USING btree (id)"
+          },
+          {
+            "indexname": "vehicles_registration_number_key",
+            "indexdef": "CREATE UNIQUE INDEX vehicles_registration_number_key ON public.vehicles USING btree (registration_number)"
+          },
+          {
+            "indexname": "idx_vehicles_owner",
+            "indexdef": "CREATE INDEX idx_vehicles_owner ON public.vehicles USING btree (owner_id)"
+          },
+          {
+            "indexname": "idx_vehicles_type",
+            "indexdef": "CREATE INDEX idx_vehicles_type ON public.vehicles USING btree (type)"
+          },
+          {
+            "indexname": "idx_vehicles_available",
+            "indexdef": "CREATE INDEX idx_vehicles_available ON public.vehicles USING btree (is_available)"
+          },
+          {
+            "indexname": "idx_vehicles_location",
+            "indexdef": "CREATE INDEX idx_vehicles_location ON public.vehicles USING gin (location)"
+          },
+          {
+            "indexname": "idx_vehicles_service_radius",
+            "indexdef": "CREATE INDEX idx_vehicles_service_radius ON public.vehicles USING btree (service_radius_km)"
+          }
+        ]
+      },
+      "wallet_transactions": {
+        "columns": [
+          {
+            "column_name": "id",
+            "data_type": "uuid",
+            "is_nullable": "NO",
+            "column_default": "uuid_generate_v4()",
+            "character_maximum_length": null
+          },
+          {
+            "column_name": "wallet_id",
+            "data_type": "uuid",
+            "is_nullable": "YES",
+            "column_default": null,
+            "character_maximum_length": null
+          },
+          {
+            "column_name": "transaction_type",
+            "data_type": "character varying",
+            "is_nullable": "NO",
+            "column_default": null,
+            "character_maximum_length": 50
+          },
+          {
+            "column_name": "amount",
+            "data_type": "numeric",
+            "is_nullable": "NO",
+            "column_default": null,
+            "character_maximum_length": null
+          },
+          {
+            "column_name": "balance_after",
+            "data_type": "numeric",
+            "is_nullable": "NO",
+            "column_default": null,
+            "character_maximum_length": null
+          },
+          {
+            "column_name": "reference_type",
+            "data_type": "character varying",
+            "is_nullable": "YES",
+            "column_default": null,
+            "character_maximum_length": 50
+          },
+          {
+            "column_name": "reference_id",
+            "data_type": "uuid",
+            "is_nullable": "YES",
+            "column_default": null,
+            "character_maximum_length": null
+          },
+          {
+            "column_name": "description",
+            "data_type": "text",
+            "is_nullable": "YES",
+            "column_default": null,
+            "character_maximum_length": null
+          },
+          {
+            "column_name": "created_at",
+            "data_type": "timestamp without time zone",
+            "is_nullable": "YES",
+            "column_default": "now()",
+            "character_maximum_length": null
+          }
+        ],
+        "rowCount": 1,
+        "indexes": [
+          {
+            "indexname": "wallet_transactions_pkey",
+            "indexdef": "CREATE UNIQUE INDEX wallet_transactions_pkey ON public.wallet_transactions USING btree (id)"
+          },
+          {
+            "indexname": "idx_wallet_transactions_wallet",
+            "indexdef": "CREATE INDEX idx_wallet_transactions_wallet ON public.wallet_transactions USING btree (wallet_id)"
+          },
+          {
+            "indexname": "idx_wallet_transactions_type",
+            "indexdef": "CREATE INDEX idx_wallet_transactions_type ON public.wallet_transactions USING btree (transaction_type)"
+          },
+          {
+            "indexname": "idx_wallet_transactions_created",
+            "indexdef": "CREATE INDEX idx_wallet_transactions_created ON public.wallet_transactions USING btree (created_at DESC)"
+          },
+          {
+            "indexname": "idx_wallet_trans_wallet",
+            "indexdef": "CREATE INDEX idx_wallet_trans_wallet ON public.wallet_transactions USING btree (wallet_id)"
+          },
+          {
+            "indexname": "idx_wallet_trans_type",
+            "indexdef": "CREATE INDEX idx_wallet_trans_type ON public.wallet_transactions USING btree (transaction_type)"
+          },
+          {
+            "indexname": "idx_wallet_trans_ref",
+            "indexdef": "CREATE INDEX idx_wallet_trans_ref ON public.wallet_transactions USING btree (reference_id)"
+          }
+        ]
+      },
+      "wallets": {
+        "columns": [
+          {
+            "column_name": "id",
+            "data_type": "uuid",
+            "is_nullable": "NO",
+            "column_default": "uuid_generate_v4()",
+            "character_maximum_length": null
+          },
+          {
+            "column_name": "user_id",
+            "data_type": "uuid",
+            "is_nullable": "YES",
+            "column_default": null,
+            "character_maximum_length": null
+          },
+          {
+            "column_name": "balance",
+            "data_type": "numeric",
+            "is_nullable": "YES",
+            "column_default": "0",
+            "character_maximum_length": null
+          },
+          {
+            "column_name": "created_at",
+            "data_type": "timestamp without time zone",
+            "is_nullable": "YES",
+            "column_default": "now()",
+            "character_maximum_length": null
+          },
+          {
+            "column_name": "updated_at",
+            "data_type": "timestamp without time zone",
+            "is_nullable": "YES",
+            "column_default": "now()",
+            "character_maximum_length": null
+          }
+        ],
+        "rowCount": 2,
+        "indexes": [
+          {
+            "indexname": "wallets_pkey",
+            "indexdef": "CREATE UNIQUE INDEX wallets_pkey ON public.wallets USING btree (id)"
+          },
+          {
+            "indexname": "wallets_user_id_key",
+            "indexdef": "CREATE UNIQUE INDEX wallets_user_id_key ON public.wallets USING btree (user_id)"
+          },
+          {
+            "indexname": "idx_wallets_user",
+            "indexdef": "CREATE INDEX idx_wallets_user ON public.wallets USING btree (user_id)"
+          }
+        ]
+      }
+    }
+  },
+  "fileStructure": {
+    "checkBookingSchema.js": {
+      "type": "file",
+      "size": 972,
+      "extension": ".js",
+      "modified": "2026-02-15T06:33:32.785Z",
+      "lines": 33
+    },
+    "checkConstraints.js": {
+      "type": "file",
+      "size": 710,
+      "extension": ".js",
+      "modified": "2026-02-15T06:37:37.346Z",
+      "lines": 27
+    },
+    "createProjectSnapshot.js": {
+      "type": "file",
+      "size": 12697,
+      "extension": ".js",
+      "modified": "2026-02-16T04:28:56.096Z",
+      "lines": 374
+    },
+    "fixBookingConstraints.js": {
+      "type": "file",
+      "size": 947,
+      "extension": ".js",
+      "modified": "2026-02-15T06:35:01.305Z",
+      "lines": 32
+    },
+    "fixVehicleConstraints.js": {
+      "type": "file",
+      "size": 597,
+      "extension": ".js",
+      "modified": "2026-02-15T03:15:34.832Z",
+      "lines": 24
+    },
+    "package-lock.json": {
+      "type": "file",
+      "size": 71475,
+      "extension": ".json",
+      "modified": "2026-02-15T12:27:16.610Z",
+      "lines": 1885
+    },
+    "package.json": {
+      "type": "file",
+      "size": 984,
+      "extension": ".json",
+      "modified": "2026-02-15T12:27:16.512Z",
+      "lines": 40
+    },
+    "setupTestData.js": {
+      "type": "file",
+      "size": 3618,
+      "extension": ".js",
+      "modified": "2026-02-15T10:17:50.183Z",
+      "lines": 109
+    },
+    "src": {
+      "type": "directory",
+      "children": {
+        "app.js": {
+          "type": "file",
+          "size": 3008,
+          "extension": ".js",
+          "modified": "2026-02-15T16:31:53.802Z",
+          "lines": 116
+        },
+        "config": {
+          "type": "directory",
+          "children": {
+            "cashfree.js": {
+              "type": "file",
+              "size": 5637,
+              "extension": ".js",
+              "modified": "2026-02-15T16:25:11.996Z",
+              "lines": 186
+            },
+            "checkEnv.js": {
+              "type": "file",
+              "size": 940,
+              "extension": ".js",
+              "modified": "2026-02-14T13:07:22.396Z",
+              "lines": 21
+            },
+            "checkUsers.js": {
+              "type": "file",
+              "size": 1325,
+              "extension": ".js",
+              "modified": "2026-02-14T11:42:25.933Z",
+              "lines": 42
+            },
+            "cloudinary.js": {
+              "type": "file",
+              "size": 693,
+              "extension": ".js",
+              "modified": "2026-02-14T16:04:37.524Z",
+              "lines": 28
+            },
+            "db.js": {
+              "type": "file",
+              "size": 973,
+              "extension": ".js",
+              "modified": "2026-02-14T11:15:17.815Z",
+              "lines": 41
+            },
+            "logger.js": {
+              "type": "file",
+              "size": 774,
+              "extension": ".js",
+              "modified": "2026-02-14T10:58:03.652Z",
+              "lines": 25
+            },
+            "runBookingUpdate.js": {
+              "type": "file",
+              "size": 664,
+              "extension": ".js",
+              "modified": "2026-02-15T06:28:45.442Z",
+              "lines": 24
+            },
+            "runMigration.js": {
+              "type": "file",
+              "size": 1040,
+              "extension": ".js",
+              "modified": "2026-02-14T11:27:52.644Z",
+              "lines": 40
+            },
+            "runUpdate.js": {
+              "type": "file",
+              "size": 1199,
+              "extension": ".js",
+              "modified": "2026-02-14T11:39:26.740Z",
+              "lines": 41
+            },
+            "runVehicleUpdate.js": {
+              "type": "file",
+              "size": 622,
+              "extension": ".js",
+              "modified": "2026-02-15T02:52:59.745Z",
+              "lines": 24
+            },
+            "schema.sql": {
+              "type": "file",
+              "size": 14846,
+              "extension": ".sql",
+              "modified": "2026-02-14T11:27:09.320Z"
+            },
+            "updateBookingSchema.sql": {
+              "type": "file",
+              "size": 482,
+              "extension": ".sql",
+              "modified": "2026-02-15T06:31:33.714Z"
+            },
+            "updateSchema.sql": {
+              "type": "file",
+              "size": 1725,
+              "extension": ".sql",
+              "modified": "2026-02-14T11:38:42.623Z"
+            },
+            "updateVehicleSchema.sql": {
+              "type": "file",
+              "size": 2732,
+              "extension": ".sql",
+              "modified": "2026-02-15T02:52:37.419Z"
+            },
+            "verifyDatabase.js": {
+              "type": "file",
+              "size": 886,
+              "extension": ".js",
+              "modified": "2026-02-14T11:29:12.275Z",
+              "lines": 31
+            }
+          }
+        },
+        "controllers": {
+          "type": "directory",
+          "children": {
+            "authController.js": {
+              "type": "file",
+              "size": 9030,
+              "extension": ".js",
+              "modified": "2026-02-14T11:56:20.516Z",
+              "lines": 332
+            },
+            "bookingController.js": {
+              "type": "file",
+              "size": 18908,
+              "extension": ".js",
+              "modified": "2026-02-15T10:22:05.459Z",
+              "lines": 672
+            },
+            "paymentController.js": {
+              "type": "file",
+              "size": 6258,
+              "extension": ".js",
+              "modified": "2026-02-15T16:27:26.439Z",
+              "lines": 252
+            },
+            "vehicleController.js": {
+              "type": "file",
+              "size": 10908,
+              "extension": ".js",
+              "modified": "2026-02-15T06:05:05.019Z",
+              "lines": 411
+            },
+            "walletController.js": {
+              "type": "file",
+              "size": 9333,
+              "extension": ".js",
+              "modified": "2026-02-15T03:44:26.957Z",
+              "lines": 363
+            }
+          }
+        },
+        "middlewares": {
+          "type": "directory",
+          "children": {
+            "authMiddleware.js": {
+              "type": "file",
+              "size": 1505,
+              "extension": ".js",
+              "modified": "2026-02-14T11:57:49.013Z",
+              "lines": 67
+            }
+          }
+        },
+        "models": {
+          "type": "directory",
+          "children": {}
+        },
+        "routes": {
+          "type": "directory",
+          "children": {
+            "authRoutes.js": {
+              "type": "file",
+              "size": 878,
+              "extension": ".js",
+              "modified": "2026-02-14T11:58:46.756Z",
+              "lines": 34
+            },
+            "bookingRoutes.js": {
+              "type": "file",
+              "size": 1859,
+              "extension": ".js",
+              "modified": "2026-02-15T06:13:34.380Z",
+              "lines": 62
+            },
+            "paymentRoutes.js": {
+              "type": "file",
+              "size": 1461,
+              "extension": ".js",
+              "modified": "2026-02-15T16:27:59.335Z",
+              "lines": 48
+            },
+            "vehicleRoutes.js": {
+              "type": "file",
+              "size": 1855,
+              "extension": ".js",
+              "modified": "2026-02-15T02:55:44.238Z",
+              "lines": 66
+            },
+            "walletRoutes.js": {
+              "type": "file",
+              "size": 1150,
+              "extension": ".js",
+              "modified": "2026-02-15T03:20:35.686Z",
+              "lines": 41
+            }
+          }
+        },
+        "server.js": {
+          "type": "file",
+          "size": 1820,
+          "extension": ".js",
+          "modified": "2026-02-14T10:52:51.591Z",
+          "lines": 64
+        },
+        "services": {
+          "type": "directory",
+          "children": {
+            "authService.js": {
+              "type": "file",
+              "size": 2656,
+              "extension": ".js",
+              "modified": "2026-02-14T11:53:13.837Z",
+              "lines": 116
+            },
+            "imageService.js": {
+              "type": "file",
+              "size": 2242,
+              "extension": ".js",
+              "modified": "2026-02-15T02:54:09.256Z",
+              "lines": 86
+            },
+            "locationService.js": {
+              "type": "file",
+              "size": 3840,
+              "extension": ".js",
+              "modified": "2026-02-15T05:59:09.651Z",
+              "lines": 141
+            },
+            "paymentService.js": {
+              "type": "file",
+              "size": 11906,
+              "extension": ".js",
+              "modified": "2026-02-15T16:47:34.573Z",
+              "lines": 438
+            },
+            "smsService.js": {
+              "type": "file",
+              "size": 3109,
+              "extension": ".js",
+              "modified": "2026-02-14T11:51:53.951Z",
+              "lines": 106
+            },
+            "testAuth.js": {
+              "type": "file",
+              "size": 1719,
+              "extension": ".js",
+              "modified": "2026-02-14T11:53:51.415Z",
+              "lines": 51
+            },
+            "testSMS.js": {
+              "type": "file",
+              "size": 658,
+              "extension": ".js",
+              "modified": "2026-02-14T11:49:29.065Z",
+              "lines": 23
+            }
+          }
+        },
+        "utils": {
+          "type": "directory",
+          "children": {}
+        }
+      }
+    },
+    "testAuthAPIs.js": {
+      "type": "file",
+      "size": 2447,
+      "extension": ".js",
+      "modified": "2026-02-14T12:03:34.011Z",
+      "lines": 73
+    },
+    "testBookingAPIs.js": {
+      "type": "file",
+      "size": 4888,
+      "extension": ".js",
+      "modified": "2026-02-15T06:26:50.841Z",
+      "lines": 139
+    },
+    "testCashfreeConnection.js": {
+      "type": "file",
+      "size": 4650,
+      "extension": ".js",
+      "modified": "2026-02-15T16:55:09.019Z",
+      "lines": 121
+    },
+    "testCloudinary.js": {
+      "type": "file",
+      "size": 543,
+      "extension": ".js",
+      "modified": "2026-02-14T16:05:31.026Z",
+      "lines": 19
+    },
+    "testFullPaymentFlow.js": {
+      "type": "file",
+      "size": 4856,
+      "extension": ".js",
+      "modified": "2026-02-15T17:06:33.193Z",
+      "lines": 109
+    },
+    "testGoogleMaps.js": {
+      "type": "file",
+      "size": 1146,
+      "extension": ".js",
+      "modified": "2026-02-15T01:00:26.841Z",
+      "lines": 38
+    },
+    "testPaymentAPIs.js": {
+      "type": "file",
+      "size": 9272,
+      "extension": ".js",
+      "modified": "2026-02-15T16:35:30.102Z",
+      "lines": 292
+    },
+    "testVehicleAPIs.js": {
+      "type": "file",
+      "size": 5139,
+      "extension": ".js",
+      "modified": "2026-02-15T03:12:02.890Z",
+      "lines": 154
+    },
+    "testWalletAPIs.js": {
+      "type": "file",
+      "size": 4445,
+      "extension": ".js",
+      "modified": "2026-02-15T03:22:37.678Z",
+      "lines": 137
+    },
+    "updatePaymentSchema.sql": {
+      "type": "file",
+      "size": 4016,
+      "extension": ".sql",
+      "modified": "2026-02-15T16:43:58.260Z"
+    }
+  },
+  "apiEndpoints": {
+    "auth": [
+      {
+        "method": "POST",
+        "path": "/send-otp"
+      },
+      {
+        "method": "POST",
+        "path": "/verify-otp"
+      },
+      {
+        "method": "POST",
+        "path": "/refresh-token"
+      },
+      {
+        "method": "POST",
+        "path": "/logout"
+      }
+    ],
+    "vehicles": [
+      {
+        "method": "POST",
+        "path": "/"
+      },
+      {
+        "method": "GET",
+        "path": "/"
+      },
+      {
+        "method": "GET",
+        "path": "/my-vehicles"
+      },
+      {
+        "method": "GET",
+        "path": "/:id"
+      },
+      {
+        "method": "PUT",
+        "path": "/:id"
+      },
+      {
+        "method": "DELETE",
+        "path": "/:id"
+      }
+    ],
+    "wallet": [
+      {
+        "method": "GET",
+        "path": "/balance"
+      },
+      {
+        "method": "POST",
+        "path": "/add-money"
+      },
+      {
+        "method": "POST",
+        "path": "/deduct"
+      },
+      {
+        "method": "GET",
+        "path": "/transactions"
+      },
+      {
+        "method": "POST",
+        "path": "/withdraw"
+      }
+    ],
+    "bookings": [
+      {
+        "method": "POST",
+        "path": "/"
+      },
+      {
+        "method": "GET",
+        "path": "/"
+      },
+      {
+        "method": "GET",
+        "path": "/:id"
+      },
+      {
+        "method": "PUT",
+        "path": "/:id/accept"
+      },
+      {
+        "method": "PUT",
+        "path": "/:id/reject"
+      },
+      {
+        "method": "PUT",
+        "path": "/:id/start"
+      },
+      {
+        "method": "PUT",
+        "path": "/:id/complete"
+      },
+      {
+        "method": "PUT",
+        "path": "/:id/cancel"
+      }
+    ],
+    "payments": [
+      {
+        "method": "POST",
+        "path": "/initiate"
+      },
+      {
+        "method": "GET",
+        "path": "/verify/:orderId"
+      },
+      {
+        "method": "POST",
+        "path": "/callback"
+      },
+      {
+        "method": "POST",
+        "path": "/webhook"
+      },
+      {
+        "method": "POST",
+        "path": "/refund"
+      },
+      {
+        "method": "GET",
+        "path": "/booking/:bookingId"
+      }
+    ]
+  },
+  "environment": {
+    "nodeVersion": "v20.20.0",
+    "platform": "win32",
+    "hasEnvFile": true,
+    "hasEnvExample": true,
+    "packageJson": {
+      "name": "sakkaram-backend",
+      "version": "1.0.0",
+      "description": "Sakkaram Agriculture Vehicle Booking - Backend API",
+      "main": "src/server.js",
+      "scripts": {
+        "start": "node src/server.js",
+        "dev": "node src/server.js",
+        "test": "echo \"No tests yet\""
+      },
+      "keywords": [
+        "agriculture",
+        "vehicle",
+        "booking"
+      ],
+      "author": "Your Name",
+      "license": "ISC",
+      "dependencies": {
+        "@googlemaps/google-maps-services-js": "^3.4.2",
+        "axios": "^1.13.5",
+        "bcryptjs": "^2.4.3",
+        "cloudinary": "^2.9.0",
+        "cookie-parser": "^1.4.6",
+        "cors": "^2.8.5",
+        "dotenv": "^16.3.1",
+        "express": "^4.18.2",
+        "express-rate-limit": "^7.1.5",
+        "express-validator": "^7.0.1",
+        "helmet": "^7.1.0",
+        "jsonwebtoken": "^9.0.2",
+        "morgan": "^1.10.0",
+        "multer": "^2.0.2",
+        "pg": "^8.11.3",
+        "pg-pool": "^3.6.1",
+        "uuid": "^9.0.1",
+        "winston": "^3.11.0",
+        "xss-clean": "^0.1.4"
+      }
+    }
+  },
+  "statistics": {
+    "totalFiles": 53,
+    "jsFiles": 46,
+    "jsonFiles": 2,
+    "totalLines": 7598,
+    "totalTables": 11,
+    "totalEndpoints": 29,
+    "totalRecords": 41
+  }
+}
