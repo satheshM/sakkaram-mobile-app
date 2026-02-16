@@ -98,6 +98,11 @@ app.use('/api/payments', paymentRoutes);
 const reviewRoutes = require('./routes/reviewRoutes');
 app.use('/api/reviews', reviewRoutes);
 
+// Notification Routes  ← ADD THIS
+const notificationRoutes = require('./routes/notificationRoutes');
+app.use('/api/notifications', notificationRoutes);
+
+
 
 // 404 Handler
 app.use((req, res) => {

@@ -1,10 +1,17 @@
 require('dotenv').config();
 const { query } = require('../config/db');
-const locationService = require('../services/locationService');
 const logger = require('../config/logger');
+const {
+  notifyNewBooking,
+  notifyBookingAccepted,
+  notifyBookingRejected,
+  notifyWorkStarted,
+  notifyWorkCompleted
+} = require('../services/notificationService');
 
 /**
- * Create Booking (Farmer)
+ * Create a new booking
+ * POST /api/bookings
  */
 const createBooking = async (req, res) => {
   try {
@@ -23,19 +30,19 @@ const createBooking = async (req, res) => {
     } = req.body;
 
     // Validate required fields
-    if (!vehicleId || !serviceType || !farmerLocationLat || !farmerLocationLng || !scheduledDate) {
+    if (!vehicleId || !serviceType || !scheduledDate) {
       return res.status(400).json({
         success: false,
-        message: 'Missing required fields: vehicleId, serviceType, location, and scheduledDate are required'
+        message: 'Vehicle, service type, and scheduled date are required'
       });
     }
 
     // Get vehicle details
     const vehicleResult = await query(
-      `SELECT v.*, u.id as owner_id, u.full_name as owner_name 
+      `SELECT v.*, u.id as owner_id 
        FROM vehicles v 
-       JOIN users u ON v.owner_id = u.id 
-       WHERE v.id = $1 AND v.is_available = true AND v.deleted_at IS NULL`,
+       JOIN users u ON u.id = v.owner_id 
+       WHERE v.id = $1 AND v.deleted_at IS NULL AND v.is_available = true`,
       [vehicleId]
     );
 
@@ -49,32 +56,36 @@ const createBooking = async (req, res) => {
     const vehicle = vehicleResult.rows[0];
     const ownerId = vehicle.owner_id;
 
-    // Check if within service radius
-    const distance = locationService.calculateDistance(
-      parseFloat(vehicle.location_lat),
-      parseFloat(vehicle.location_lng),
-      parseFloat(farmerLocationLat),
-      parseFloat(farmerLocationLng)
-    );
-
-    const distanceKm = distance.distanceValue / 1000;
-    if (distanceKm > vehicle.service_radius_km) {
+    // Prevent self-booking
+    if (ownerId === farmerId) {
       return res.status(400).json({
         success: false,
-        message: `Location is outside service area. Maximum distance: ${vehicle.service_radius_km} km, Your distance: ${distanceKm.toFixed(1)} km`
+        message: 'You cannot book your own vehicle'
       });
     }
 
-    // Find service pricing from vehicle's services_offered
-    const services = vehicle.services_offered;
-    const selectedService = services.find(s => s.serviceName === serviceType);
+    // Find matching service
+    const servicesOffered = vehicle.services_offered || [];
+    const selectedService = servicesOffered.find(s => s.serviceType === serviceType);
 
+    console.log(servicesOffered)
+    console.log("Requested forrrrrrrrrrrrrrrrr rrrr"+serviceType)
     if (!selectedService) {
       return res.status(400).json({
         success: false,
-        message: 'Selected service not offered by this vehicle'
+        message: 'This service is not offered by this vehicle'
       });
     }
+
+    // Calculate distance
+    const distanceKm = farmerLocationLat && farmerLocationLng && vehicle.location_lat && vehicle.location_lng
+      ? calculateDistance(
+          farmerLocationLat,
+          farmerLocationLng,
+          vehicle.location_lat,
+          vehicle.location_lng
+        )
+      : 0;
 
     // Calculate pricing
     let baseAmount = 0;
@@ -133,33 +144,52 @@ const createBooking = async (req, res) => {
       ]
     );
 
-    logger.info(`Booking created: ${bookingNumber} by farmer ${farmerId}`);
+    const booking = bookingResult.rows[0];
+
+    // Send notification to owner (non-blocking)
+    setImmediate(async () => {
+      try {
+        const farmerResult = await query(
+          'SELECT full_name FROM users WHERE id = $1',
+          [farmerId]
+        );
+
+        await notifyNewBooking(
+          ownerId,
+          booking.id,
+          bookingNumber,
+          farmerResult.rows[0]?.full_name || 'A farmer'
+        );
+      } catch (notifError) {
+        logger.error('Failed to send notification:', notifError);
+      }
+    });
+
+    logger.info('Booking created', {
+      bookingId: booking.id,
+      bookingNumber,
+      farmerId,
+      vehicleId
+    });
 
     res.status(201).json({
       success: true,
-      message: 'Booking request created successfully',
-      booking: bookingResult.rows[0],
-      pricing: {
-        baseAmount,
-        farmerServiceFee,
-        totalFarmerPays,
-        ownerReceives: totalOwnerReceives,
-        platformEarning
-      }
+      message: 'Booking created successfully',
+      booking
     });
 
   } catch (error) {
     logger.error('Create booking error:', error);
     res.status(500).json({
       success: false,
-      message: 'Failed to create booking',
-      error: process.env.NODE_ENV === 'development' ? error.message : undefined
+      message: 'Failed to create booking'
     });
   }
 };
 
 /**
- * Get All Bookings (filtered by user role)
+ * Get bookings (farmer's or owner's bookings)
+ * GET /api/bookings
  */
 const getBookings = async (req, res) => {
   try {
@@ -167,62 +197,68 @@ const getBookings = async (req, res) => {
     const userRole = req.user.role;
     const { status, page = 1, limit = 20 } = req.query;
 
+    const offset = (page - 1) * limit;
+
     let queryText = `
-      SELECT b.*, 
-             v.name as vehicle_name, v.type as vehicle_type, v.model as vehicle_model,
-             f.full_name as farmer_name, f.phone_number as farmer_phone,
-             o.full_name as owner_name, o.phone_number as owner_phone
+      SELECT 
+        b.*,
+        v.name as vehicle_name,
+        v.type as vehicle_type,
+        v.model as vehicle_model,
+        v.images as vehicle_images,
+        farmer.full_name as farmer_name,
+        farmer.phone_number as farmer_phone,
+        owner.full_name as owner_name,
+        owner.phone_number as owner_phone
       FROM bookings b
-      JOIN vehicles v ON b.vehicle_id = v.id
-      JOIN users f ON b.farmer_id = f.id
-      JOIN users o ON b.owner_id = o.id
+      LEFT JOIN vehicles v ON v.id = b.vehicle_id
+      LEFT JOIN users farmer ON farmer.id = b.farmer_id
+      LEFT JOIN users owner ON owner.id = b.owner_id
       WHERE b.deleted_at IS NULL
     `;
 
     const params = [];
-    let paramIndex = 1;
+    let paramCount = 0;
 
-    // Filter by user role
     if (userRole === 'farmer') {
-      queryText += ` AND b.farmer_id = $${paramIndex}`;
+      paramCount++;
+      queryText += ` AND b.farmer_id = $${paramCount}`;
       params.push(userId);
-      paramIndex++;
     } else if (userRole === 'owner') {
-      queryText += ` AND b.owner_id = $${paramIndex}`;
+      paramCount++;
+      queryText += ` AND b.owner_id = $${paramCount}`;
       params.push(userId);
-      paramIndex++;
     }
 
-    // Filter by status
     if (status) {
-      queryText += ` AND b.status = $${paramIndex}`;
+      paramCount++;
+      queryText += ` AND b.status = $${paramCount}`;
       params.push(status);
-      paramIndex++;
     }
 
-    queryText += ` ORDER BY b.created_at DESC`;
-
-    // Pagination
-    const offset = (page - 1) * limit;
-    queryText += ` LIMIT $${paramIndex} OFFSET $${paramIndex + 1}`;
+    queryText += ` ORDER BY b.created_at DESC LIMIT $${paramCount + 1} OFFSET $${paramCount + 2}`;
     params.push(limit, offset);
 
     const result = await query(queryText, params);
 
     // Get total count
-    let countQuery = `SELECT COUNT(*) FROM bookings b WHERE b.deleted_at IS NULL`;
+    let countQuery = 'SELECT COUNT(*) FROM bookings WHERE deleted_at IS NULL';
     const countParams = [];
-    
+    let countParamCount = 0;
+
     if (userRole === 'farmer') {
-      countQuery += ` AND b.farmer_id = $1`;
+      countParamCount++;
+      countQuery += ` AND farmer_id = $${countParamCount}`;
       countParams.push(userId);
     } else if (userRole === 'owner') {
-      countQuery += ` AND b.owner_id = $1`;
+      countParamCount++;
+      countQuery += ` AND owner_id = $${countParamCount}`;
       countParams.push(userId);
     }
 
     if (status) {
-      countQuery += ` AND b.status = $${countParams.length + 1}`;
+      countParamCount++;
+      countQuery += ` AND status = $${countParamCount}`;
       countParams.push(status);
     }
 
@@ -250,7 +286,8 @@ const getBookings = async (req, res) => {
 };
 
 /**
- * Get Single Booking
+ * Get single booking details
+ * GET /api/bookings/:id
  */
 const getBookingById = async (req, res) => {
   try {
@@ -258,17 +295,27 @@ const getBookingById = async (req, res) => {
     const userId = req.user.userId;
 
     const result = await query(
-      `SELECT b.*, 
-              v.name as vehicle_name, v.type as vehicle_type, v.model as vehicle_model,
-              v.images as vehicle_images, v.registration_number,
-              f.full_name as farmer_name, f.phone_number as farmer_phone,
-              o.full_name as owner_name, o.phone_number as owner_phone
-       FROM bookings b
-       JOIN vehicles v ON b.vehicle_id = v.id
-       JOIN users f ON b.farmer_id = f.id
-       JOIN users o ON b.owner_id = o.id
-       WHERE b.id = $1 AND b.deleted_at IS NULL`,
-      [id]
+      `SELECT 
+        b.*,
+        v.name as vehicle_name,
+        v.type as vehicle_type,
+        v.model as vehicle_model,
+        v.images as vehicle_images,
+        v.location_lat as vehicle_lat,
+        v.location_lng as vehicle_lng,
+        farmer.full_name as farmer_name,
+        farmer.phone_number as farmer_phone,
+        farmer.profile_image_url as farmer_image,
+        owner.full_name as owner_name,
+        owner.phone_number as owner_phone,
+        owner.profile_image_url as owner_image
+      FROM bookings b
+      LEFT JOIN vehicles v ON v.id = b.vehicle_id
+      LEFT JOIN users farmer ON farmer.id = b.farmer_id
+      LEFT JOIN users owner ON owner.id = b.owner_id
+      WHERE b.id = $1 AND b.deleted_at IS NULL
+        AND (b.farmer_id = $2 OR b.owner_id = $2)`,
+      [id, userId]
     );
 
     if (result.rows.length === 0) {
@@ -278,19 +325,9 @@ const getBookingById = async (req, res) => {
       });
     }
 
-    const booking = result.rows[0];
-
-    // Check access permission
-    if (booking.farmer_id !== userId && booking.owner_id !== userId && req.user.role !== 'admin') {
-      return res.status(403).json({
-        success: false,
-        message: 'Access denied'
-      });
-    }
-
     res.status(200).json({
       success: true,
-      booking
+      booking: result.rows[0]
     });
 
   } catch (error) {
@@ -303,13 +340,15 @@ const getBookingById = async (req, res) => {
 };
 
 /**
- * Accept Booking (Owner)
+ * Accept a booking (Owner only)
+ * PUT /api/bookings/:id/accept
  */
 const acceptBooking = async (req, res) => {
   try {
     const { id } = req.params;
-    const ownerId = req.user.userId;
+    const userId = req.user.userId;
 
+    // Get booking
     const bookingResult = await query(
       'SELECT * FROM bookings WHERE id = $1 AND deleted_at IS NULL',
       [id]
@@ -324,34 +363,58 @@ const acceptBooking = async (req, res) => {
 
     const booking = bookingResult.rows[0];
 
-    if (booking.owner_id !== ownerId) {
+    // Check if user is owner
+    if (booking.owner_id !== userId) {
       return res.status(403).json({
         success: false,
-        message: 'Access denied'
+        message: 'Only the vehicle owner can accept this booking'
       });
     }
 
+    // Check if booking is in pending status
     if (booking.status !== 'pending') {
       return res.status(400).json({
         success: false,
-        message: `Cannot accept booking. Current status: ${booking.status}`
+        message: `Cannot accept booking in ${booking.status} status`
       });
     }
 
+    // Update booking status
     const updateResult = await query(
       `UPDATE bookings 
-       SET status = 'confirmed', updated_at = NOW() 
-       WHERE id = $1 
+       SET status = 'confirmed', updated_at = NOW()
+       WHERE id = $1
        RETURNING *`,
       [id]
     );
 
-    logger.info(`Booking ${id} accepted by owner ${ownerId}`);
+    const updatedBooking = updateResult.rows[0];
+
+    // Send notification to farmer (non-blocking)
+    setImmediate(async () => {
+      try {
+        const vehicleResult = await query(
+          'SELECT name FROM vehicles WHERE id = $1',
+          [booking.vehicle_id]
+        );
+
+        await notifyBookingAccepted(
+          booking.farmer_id,
+          booking.id,
+          booking.booking_number,
+          vehicleResult.rows[0]?.name || 'Vehicle'
+        );
+      } catch (notifError) {
+        logger.error('Failed to send notification:', notifError);
+      }
+    });
+
+    logger.info('Booking accepted', { bookingId: id, ownerId: userId });
 
     res.status(200).json({
       success: true,
       message: 'Booking accepted successfully',
-      booking: updateResult.rows[0]
+      booking: updatedBooking
     });
 
   } catch (error) {
@@ -364,14 +427,16 @@ const acceptBooking = async (req, res) => {
 };
 
 /**
- * Reject Booking (Owner)
+ * Reject a booking (Owner only)
+ * PUT /api/bookings/:id/reject
  */
 const rejectBooking = async (req, res) => {
   try {
     const { id } = req.params;
-    const ownerId = req.user.userId;
-    const { reason } = req.body;
+    const userId = req.user.userId;
+    const { rejectionReason } = req.body;
 
+    // Get booking
     const bookingResult = await query(
       'SELECT * FROM bookings WHERE id = $1 AND deleted_at IS NULL',
       [id]
@@ -386,36 +451,61 @@ const rejectBooking = async (req, res) => {
 
     const booking = bookingResult.rows[0];
 
-    if (booking.owner_id !== ownerId) {
+    // Check if user is owner
+    if (booking.owner_id !== userId) {
       return res.status(403).json({
         success: false,
-        message: 'Access denied'
+        message: 'Only the vehicle owner can reject this booking'
       });
     }
 
+    // Check if booking is in pending status
     if (booking.status !== 'pending') {
       return res.status(400).json({
         success: false,
-        message: `Cannot reject booking. Current status: ${booking.status}`
+        message: `Cannot reject booking in ${booking.status} status`
       });
     }
 
+    // Update booking status
     const updateResult = await query(
       `UPDATE bookings 
-       SET status = 'rejected', 
+       SET status = 'rejected',
            cancellation_reason = $1,
-           updated_at = NOW() 
-       WHERE id = $2 
+           cancelled_at = NOW(),
+           updated_at = NOW()
+       WHERE id = $2
        RETURNING *`,
-      [reason || 'Rejected by owner', id]
+      [rejectionReason || 'Rejected by owner', id]
     );
 
-    logger.info(`Booking ${id} rejected by owner ${ownerId}`);
+    const updatedBooking = updateResult.rows[0];
+
+    // Send notification to farmer (non-blocking)
+    setImmediate(async () => {
+      try {
+        const vehicleResult = await query(
+          'SELECT name FROM vehicles WHERE id = $1',
+          [booking.vehicle_id]
+        );
+
+        await notifyBookingRejected(
+          booking.farmer_id,
+          booking.id,
+          booking.booking_number,
+          vehicleResult.rows[0]?.name || 'Vehicle'
+        );
+      } catch (notifError) {
+        logger.error('Failed to send notification:', notifError);
+      }
+    });
+
+    logger.info('Booking rejected', { bookingId: id, ownerId: userId });
 
     res.status(200).json({
       success: true,
       message: 'Booking rejected',
-      booking: updateResult.rows[0]
+      booking: updatedBooking
     });
 
   } catch (error) {
@@ -428,13 +518,15 @@ const rejectBooking = async (req, res) => {
 };
 
 /**
- * Start Work (Owner)
+ * Start work (Owner only)
+ * PUT /api/bookings/:id/start
  */
 const startWork = async (req, res) => {
   try {
     const { id } = req.params;
-    const ownerId = req.user.userId;
+    const userId = req.user.userId;
 
+    // Get booking
     const bookingResult = await query(
       'SELECT * FROM bookings WHERE id = $1 AND deleted_at IS NULL',
       [id]
@@ -449,36 +541,54 @@ const startWork = async (req, res) => {
 
     const booking = bookingResult.rows[0];
 
-    if (booking.owner_id !== ownerId) {
+    // Check if user is owner
+    if (booking.owner_id !== userId) {
       return res.status(403).json({
         success: false,
-        message: 'Access denied'
+        message: 'Only the vehicle owner can start work'
       });
     }
 
+    // Check if booking is confirmed
     if (booking.status !== 'confirmed') {
       return res.status(400).json({
         success: false,
-        message: `Cannot start work. Current status: ${booking.status}`
+        message: `Cannot start work for booking in ${booking.status} status`
       });
     }
 
+    // Update booking status
     const updateResult = await query(
       `UPDATE bookings 
-       SET status = 'in_progress', 
+       SET status = 'in_progress',
            work_started_at = NOW(),
-           updated_at = NOW() 
-       WHERE id = $1 
+           updated_at = NOW()
+       WHERE id = $1
        RETURNING *`,
       [id]
     );
 
-    logger.info(`Work started for booking ${id} by owner ${ownerId}`);
+    const updatedBooking = updateResult.rows[0];
+
+    // Send notification to farmer (non-blocking)
+    setImmediate(async () => {
+      try {
+        await notifyWorkStarted(
+          booking.farmer_id,
+          booking.id,
+          booking.booking_number
+        );
+      } catch (notifError) {
+        logger.error('Failed to send notification:', notifError);
+      }
+    });
+
+    logger.info('Work started', { bookingId: id, ownerId: userId });
 
     res.status(200).json({
       success: true,
       message: 'Work started successfully',
-      booking: updateResult.rows[0]
+      booking: updatedBooking
     });
 
   } catch (error) {
@@ -491,14 +601,16 @@ const startWork = async (req, res) => {
 };
 
 /**
- * Complete Work (Owner)
+ * Complete work (Owner only)
+ * PUT /api/bookings/:id/complete
  */
 const completeWork = async (req, res) => {
   try {
     const { id } = req.params;
-    const ownerId = req.user.userId;
-    const { actualHours, actualArea, completionNotes } = req.body;
+    const userId = req.user.userId;
+    const { actualHours, completionNotes } = req.body;
 
+    // Get booking
     const bookingResult = await query(
       'SELECT * FROM bookings WHERE id = $1 AND deleted_at IS NULL',
       [id]
@@ -513,75 +625,57 @@ const completeWork = async (req, res) => {
 
     const booking = bookingResult.rows[0];
 
-    if (booking.owner_id !== ownerId) {
+    // Check if user is owner
+    if (booking.owner_id !== userId) {
       return res.status(403).json({
         success: false,
-        message: 'Access denied'
+        message: 'Only the vehicle owner can complete work'
       });
     }
 
+    // Check if booking is in progress
     if (booking.status !== 'in_progress') {
       return res.status(400).json({
         success: false,
-        message: `Cannot complete work. Current status: ${booking.status}`
+        message: `Cannot complete work for booking in ${booking.status} status`
       });
     }
 
-    // Recalculate amount if actual hours/area provided
-    let finalAmount = booking.base_amount;
-    
-    if (actualHours && booking.pricing_type === 'hourly') {
-      finalAmount = booking.hourly_rate * actualHours;
-    } else if (actualArea && booking.pricing_type === 'per_acre') {
-      finalAmount = booking.per_acre_rate * actualArea;
-    }
-
-    // Recalculate commission
-    const farmerServiceFee = finalAmount * 0.05;
-    const ownerCommission = finalAmount * 0.05;
-    const platformEarning = farmerServiceFee + ownerCommission;
-    const totalFarmerPays = finalAmount + farmerServiceFee;
-    const totalOwnerReceives = finalAmount - ownerCommission;
-
+    // Update booking status
     const updateResult = await query(
       `UPDATE bookings 
-       SET status = 'completed', 
+       SET status = 'completed',
            work_completed_at = NOW(),
            actual_hours = $1,
-           base_amount = $2,
-           farmer_service_fee = $3,
-           owner_commission = $4,
-           platform_earning = $5,
-           total_farmer_pays = $6,
-           total_owner_receives = $7,
-           completion_notes = $8,
-           updated_at = NOW() 
-       WHERE id = $9 
+           completion_notes = $2,
+           updated_at = NOW()
+       WHERE id = $3
        RETURNING *`,
-      [
-        actualHours || booking.estimated_hours,
-        finalAmount,
-        farmerServiceFee,
-        ownerCommission,
-        platformEarning,
-        totalFarmerPays,
-        totalOwnerReceives,
-        completionNotes,
-        id
-      ]
+      [actualHours || booking.estimated_hours, completionNotes, id]
     );
 
-    logger.info(`Work completed for booking ${id} by owner ${ownerId}`);
+    const updatedBooking = updateResult.rows[0];
+
+    // Send notification to farmer (non-blocking)
+    setImmediate(async () => {
+      try {
+        await notifyWorkCompleted(
+          booking.farmer_id,
+          booking.id,
+          booking.booking_number,
+          booking.total_farmer_pays
+        );
+      } catch (notifError) {
+        logger.error('Failed to send notification:', notifError);
+      }
+    });
+
+    logger.info('Work completed', { bookingId: id, ownerId: userId });
 
     res.status(200).json({
       success: true,
-      message: 'Work completed successfully. Awaiting payment from farmer.',
-      booking: updateResult.rows[0],
-      payment: {
-        farmerMustPay: totalFarmerPays,
-        ownerWillReceive: totalOwnerReceives,
-        platformEarning
-      }
+      message: 'Work completed successfully',
+      booking: updatedBooking
     });
 
   } catch (error) {
@@ -594,14 +688,16 @@ const completeWork = async (req, res) => {
 };
 
 /**
- * Cancel Booking (Farmer or Owner)
+ * Cancel booking
+ * PUT /api/bookings/:id/cancel
  */
 const cancelBooking = async (req, res) => {
   try {
     const { id } = req.params;
     const userId = req.user.userId;
-    const { reason } = req.body;
+    const { cancellationReason } = req.body;
 
+    // Get booking
     const bookingResult = await query(
       'SELECT * FROM bookings WHERE id = $1 AND deleted_at IS NULL',
       [id]
@@ -616,34 +712,39 @@ const cancelBooking = async (req, res) => {
 
     const booking = bookingResult.rows[0];
 
+    // Check if user is farmer or owner
     if (booking.farmer_id !== userId && booking.owner_id !== userId) {
       return res.status(403).json({
         success: false,
-        message: 'Access denied'
+        message: 'You are not authorized to cancel this booking'
       });
     }
 
-    if (['completed', 'cancelled'].includes(booking.status)) {
+    // Check if booking can be cancelled
+    if (booking.status === 'completed' || booking.status === 'cancelled') {
       return res.status(400).json({
         success: false,
-        message: `Cannot cancel booking. Current status: ${booking.status}`
+        message: `Cannot cancel booking in ${booking.status} status`
       });
     }
 
+    // Determine who cancelled
     const cancelledBy = booking.farmer_id === userId ? 'farmer' : 'owner';
 
+    // Update booking status
     const updateResult = await query(
       `UPDATE bookings 
-       SET status = 'cancelled', 
+       SET status = 'cancelled',
            cancelled_by = $1,
            cancellation_reason = $2,
-           updated_at = NOW() 
-       WHERE id = $3 
+           cancelled_at = NOW(),
+           updated_at = NOW()
+       WHERE id = $3
        RETURNING *`,
-      [cancelledBy, reason || 'No reason provided', id]
+      [cancelledBy, cancellationReason || 'Cancelled by user', id]
     );
 
-    logger.info(`Booking ${id} cancelled by ${cancelledBy} (${userId})`);
+    logger.info('Booking cancelled', { bookingId: id, cancelledBy, userId });
 
     res.status(200).json({
       success: true,
@@ -659,6 +760,19 @@ const cancelBooking = async (req, res) => {
     });
   }
 };
+
+// Helper: Calculate distance between two points
+function calculateDistance(lat1, lon1, lat2, lon2) {
+  const R = 6371; // Radius of Earth in km
+  const dLat = (lat2 - lat1) * Math.PI / 180;
+  const dLon = (lon2 - lon1) * Math.PI / 180;
+  const a =
+    Math.sin(dLat / 2) * Math.sin(dLat / 2) +
+    Math.cos(lat1 * Math.PI / 180) * Math.cos(lat2 * Math.PI / 180) *
+    Math.sin(dLon / 2) * Math.sin(dLon / 2);
+  const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
+  return R * c;
+}
 
 module.exports = {
   createBooking,
