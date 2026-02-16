@@ -102,6 +102,9 @@ app.use('/api/reviews', reviewRoutes);
 const notificationRoutes = require('./routes/notificationRoutes');
 app.use('/api/notifications', notificationRoutes);
 
+// Admin Routes  ← ADD THIS
+const adminRoutes = require('./routes/adminRoutes');
+app.use('/api/admin', adminRoutes);
 
 
 // 404 Handler
