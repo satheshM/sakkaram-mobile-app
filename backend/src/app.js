@@ -89,6 +89,11 @@ app.use('/api/wallet', walletRoutes);
 const bookingRoutes = require('./routes/bookingRoutes');
 app.use('/api/bookings', bookingRoutes);
 
+
+// Payment Routes
+const paymentRoutes = require('./routes/paymentRoutes');
+app.use('/api/payments', paymentRoutes);
+
 // 404 Handler
 app.use((req, res) => {
   res.status(404).json({
