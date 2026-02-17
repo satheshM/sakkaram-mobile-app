@@ -106,6 +106,10 @@ app.use('/api/notifications', notificationRoutes);
 const adminRoutes = require('./routes/adminRoutes');
 app.use('/api/admin', adminRoutes);
 
+// Search Routes  ← ADD THIS
+const searchRoutes = require('./routes/searchRoutes');
+app.use('/api/search', searchRoutes);
+
 
 // 404 Handler
 app.use((req, res) => {
