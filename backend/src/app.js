@@ -7,6 +7,7 @@ const rateLimit = require('express-rate-limit');
 const xss = require('xss-clean');
 require('dotenv').config();
 
+
 const { pool } = require('./config/db'); 
 const logger = require('./config/logger');
 
@@ -22,7 +23,7 @@ const app = express();
 // Security Middlewares
 app.use(helmet());
 app.use(xss());
-
+app.set('trust proxy', 1);
 // Rate Limiting
 const limiter = rateLimit({
   windowMs: parseInt(process.env.RATE_LIMIT_WINDOW_MS) || 15 * 60 * 1000,
