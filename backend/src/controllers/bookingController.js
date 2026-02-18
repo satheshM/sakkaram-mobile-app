@@ -68,8 +68,7 @@ const createBooking = async (req, res) => {
     const servicesOffered = vehicle.services_offered || [];
     const selectedService = servicesOffered.find(s => s.serviceType === serviceType);
 
-    console.log(servicesOffered)
-    console.log("Requested forrrrrrrrrrrrrrrrr rrrr"+serviceType)
+   
     if (!selectedService) {
       return res.status(400).json({
         success: false,

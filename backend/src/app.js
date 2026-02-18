@@ -110,6 +110,60 @@ app.use('/api/admin', adminRoutes);
 const searchRoutes = require('./routes/searchRoutes');
 app.use('/api/search', searchRoutes);
 
+// Maps Routes  ← ADD THIS
+const mapsRoutes = require('./routes/mapsRoutes');
+app.use('/api/maps', mapsRoutes);
+
+
+// Favorites Routes  ← ADD
+const favoriteRoutes = require('./routes/favoriteRoutes');
+app.use('/api/favorites', favoriteRoutes);
+
+// Referral Routes  ← ADD
+const referralRoutes = require('./routes/referralRoutes');
+app.use('/api/referrals', referralRoutes);
+
+// Coupon Routes  ← ADD
+const couponRoutes = require('./routes/couponRoutes');
+app.use('/api/coupons', couponRoutes);
+
+// Analytics Routes  ← ADD
+const analyticsRoutes = require('./routes/analyticsRoutes');
+app.use('/api/analytics', analyticsRoutes);
+
+
+// Health Check Endpoint  ← ADD THIS
+app.get('/api/health', async (req, res) => {
+  try {
+    // Check database connection
+    const dbCheck = await pool.query('SELECT NOW()');
+    
+    res.status(200).json({
+      status: 'healthy',
+      timestamp: new Date().toISOString(),
+      uptime: process.uptime(),
+      environment: process.env.NODE_ENV || 'development',
+      database: {
+        status: 'connected',
+        timestamp: dbCheck.rows[0].now
+      },
+      services: {
+        cloudinary: process.env.CLOUDINARY_CLOUD_NAME ? 'configured' : 'missing',
+        cashfree: process.env.CASHFREE_APP_ID ? 'configured' : 'missing',
+        googleMaps: process.env.GOOGLE_MAPS_BACKEND_KEY ? 'configured' : 'missing'
+      },
+      version: '1.0.0',
+      apis: 69
+    });
+  } catch (error) {
+    res.status(503).json({
+      status: 'unhealthy',
+      error: error.message,
+      timestamp: new Date().toISOString()
+    });
+  }
+});
+
 
 // 404 Handler
 app.use((req, res) => {
