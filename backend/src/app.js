@@ -7,6 +7,7 @@ const rateLimit = require('express-rate-limit');
 const xss = require('xss-clean');
 require('dotenv').config();
 
+const { pool } = require('./config/db'); 
 const logger = require('./config/logger');
 
 // Import Routes
