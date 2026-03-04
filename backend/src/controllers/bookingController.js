@@ -21,14 +21,22 @@ const {
  * FIX: Service lookup now checks BOTH s.serviceType AND s.serviceName so it
  * works regardless of which key the owner used when adding the vehicle.
  */
+
+const safeParseJSON = (value, fallback = []) => {
+  if (Array.isArray(value))   return value;
+  if (typeof value === 'string') {
+    try { return JSON.parse(value); } catch { return fallback; }
+  }
+  return fallback;
+};
+
+
 const findService = (servicesOffered, serviceType) => {
-  if (!Array.isArray(servicesOffered)) return null;
-  return servicesOffered.find(
-    (s) =>
-      s.serviceType === serviceType ||
-      s.serviceName === serviceType ||
-      (s.serviceName || '').toLowerCase() === (serviceType || '').toLowerCase() ||
-      (s.serviceType || '').toLowerCase() === (serviceType || '').toLowerCase()
+  const arr    = safeParseJSON(servicesOffered);
+  const target = (serviceType || '').trim().toLowerCase();
+  return arr.find((s) =>
+    (s.serviceType || '').trim().toLowerCase() === target ||
+    (s.serviceName || '').trim().toLowerCase() === target
   ) || null;
 };
 
@@ -100,7 +108,7 @@ const createBooking = async (req, res) => {
     }
 
     // ✅ FIXED: Dual-key service lookup (serviceName OR serviceType)
-    const servicesOffered = vehicle.services_offered || [];
+    const servicesOffered = safeParseJSON(vehicle.services_offered);
     const selectedService = findService(servicesOffered, serviceType);
 
     if (!selectedService) {
