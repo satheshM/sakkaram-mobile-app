@@ -1,5 +1,5 @@
 const express = require('express');
-const router = express.Router();
+const router  = express.Router();
 const bookingController = require('../controllers/bookingController');
 const { verifyToken, checkRole } = require('../middlewares/authMiddleware');
 
@@ -58,5 +58,15 @@ router.put('/:id/complete', verifyToken, checkRole('owner'), bookingController.c
  * @access  Private
  */
 router.put('/:id/cancel', verifyToken, bookingController.cancelBooking);
+
+/**
+ * @route   PUT /api/bookings/:id/payment
+ * @desc    Update payment method/status after work complete (Farmer)
+ * @access  Private (Farmer only)
+ *
+ * BUG 11 FIX: This route was missing. Called by the frontend payment modal
+ * when farmer selects UPI or Cash as payment method.
+ */
+router.put('/:id/payment', verifyToken, checkRole('farmer'), bookingController.updatePayment);
 
 module.exports = router;

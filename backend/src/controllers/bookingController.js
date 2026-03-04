@@ -10,16 +10,16 @@ const {
 } = require('../services/notificationService');
 
 /**
- * CRITICAL FIX — serviceName vs serviceType mismatch:
+ * FIXES in this file:
  *
- * The mobile AddVehicle screen stores services as:
- *   { serviceName: 'Ploughing', pricingType: 'hourly', hourlyRate: 500 }
+ * BUG 4 — getBookingById: added v.location_address as vehicle_address to the
+ *          SELECT so the frontend can display the vehicle's place name.
  *
- * The old BookingCreate screen sent: serviceType = service.serviceName (the label)
- * The old controller looked for: s.serviceType === serviceType  <-- always failed!
+ * BUG 7 — completeWork: when owner enters actual_hours, the total_farmer_pays
+ *          is now recalculated using actual hours (not just estimated hours).
  *
- * FIX: Service lookup now checks BOTH s.serviceType AND s.serviceName so it
- * works regardless of which key the owner used when adding the vehicle.
+ * BUG 11 — New updatePayment() function + exported, handles
+ *           PUT /api/bookings/:id/payment  (UPI / Cash payment recording).
  */
 
 const safeParseJSON = (value, fallback = []) => {
@@ -29,7 +29,6 @@ const safeParseJSON = (value, fallback = []) => {
   }
   return fallback;
 };
-
 
 const findService = (servicesOffered, serviceType) => {
   const arr    = safeParseJSON(servicesOffered);
@@ -61,7 +60,6 @@ const createBooking = async (req, res) => {
       couponCode,
     } = req.body;
 
-    // Validate required fields
     if (!vehicleId || !serviceType || !scheduledDate) {
       return res.status(400).json({
         success: false,
@@ -69,7 +67,6 @@ const createBooking = async (req, res) => {
       });
     }
 
-    // Validate date is not in the past
     const bookingDate = new Date(scheduledDate);
     const today = new Date();
     today.setHours(0, 0, 0, 0);
@@ -80,7 +77,6 @@ const createBooking = async (req, res) => {
       });
     }
 
-    // Get vehicle details
     const vehicleResult = await query(
       `SELECT v.*, u.id as owner_id 
        FROM vehicles v 
@@ -99,7 +95,6 @@ const createBooking = async (req, res) => {
     const vehicle = vehicleResult.rows[0];
     const ownerId = vehicle.owner_id;
 
-    // Prevent self-booking
     if (ownerId === farmerId) {
       return res.status(400).json({
         success: false,
@@ -107,12 +102,10 @@ const createBooking = async (req, res) => {
       });
     }
 
-    // ✅ FIXED: Dual-key service lookup (serviceName OR serviceType)
     const servicesOffered = safeParseJSON(vehicle.services_offered);
     const selectedService = findService(servicesOffered, serviceType);
 
     if (!selectedService) {
-      // Debug: log what we have to help diagnose
       logger.warn('Service not found', {
         serviceTypeRequested: serviceType,
         servicesAvailable: servicesOffered.map((s) => ({
@@ -132,7 +125,6 @@ const createBooking = async (req, res) => {
       });
     }
 
-    // Calculate distance
     const distanceKm = farmerLocationLat && farmerLocationLng && vehicle.location_lat && vehicle.location_lng
       ? calculateDistance(
           parseFloat(farmerLocationLat),
@@ -142,7 +134,6 @@ const createBooking = async (req, res) => {
         )
       : 0;
 
-    // Calculate pricing
     let baseAmount = 0;
     let hourlyRate = null;
     let perAcreRate = null;
@@ -159,7 +150,6 @@ const createBooking = async (req, res) => {
       baseAmount = fixedPrice;
     }
 
-    // Apply coupon discount if provided
     let discountAmount = 0;
     if (couponCode) {
       try {
@@ -180,7 +170,6 @@ const createBooking = async (req, res) => {
           } else {
             discountAmount = Math.min(coupon.discount_value, baseAmount);
           }
-          // Increment coupon use count
           await query('UPDATE coupons SET uses_count = uses_count + 1 WHERE id = $1', [coupon.id]);
         }
       } catch (couponErr) {
@@ -188,22 +177,16 @@ const createBooking = async (req, res) => {
       }
     }
 
-    const discountedBase = baseAmount - discountAmount;
-
-    // Calculate commission (5% from farmer, 5% from owner)
-    const farmerServiceFee = discountedBase * 0.05;
-    const ownerCommission  = discountedBase * 0.05;
-    const platformEarning  = farmerServiceFee + ownerCommission;
-    const totalFarmerPays  = discountedBase + farmerServiceFee;
+    const discountedBase     = baseAmount - discountAmount;
+    const farmerServiceFee   = discountedBase * 0.05;
+    const ownerCommission    = discountedBase * 0.05;
+    const platformEarning    = farmerServiceFee + ownerCommission;
+    const totalFarmerPays    = discountedBase + farmerServiceFee;
     const totalOwnerReceives = discountedBase - ownerCommission;
 
-    // Generate booking number
     const bookingNumber = `BK${Date.now()}${Math.floor(Math.random() * 1000)}`;
-
-    // Normalize service name for storage
     const resolvedServiceName = selectedService.serviceName || selectedService.serviceType || serviceType;
 
-    // Create booking
     const bookingResult = await query(
       `INSERT INTO bookings (
         booking_number, farmer_id, vehicle_id, owner_id,
@@ -237,19 +220,10 @@ const createBooking = async (req, res) => {
 
     const booking = bookingResult.rows[0];
 
-    // Send notification to owner (non-blocking)
     setImmediate(async () => {
       try {
-        const farmerResult = await query(
-          'SELECT full_name FROM users WHERE id = $1',
-          [farmerId]
-        );
-        await notifyNewBooking(
-          ownerId,
-          booking.id,
-          bookingNumber,
-          farmerResult.rows[0]?.full_name || 'A farmer'
-        );
+        const farmerResult = await query('SELECT full_name FROM users WHERE id = $1', [farmerId]);
+        await notifyNewBooking(ownerId, booking.id, bookingNumber, farmerResult.rows[0]?.full_name || 'A farmer');
       } catch (notifError) {
         logger.error('Failed to send notification:', notifError);
       }
@@ -257,15 +231,10 @@ const createBooking = async (req, res) => {
 
     logger.info('Booking created', { bookingId: booking.id, bookingNumber, farmerId, vehicleId });
 
-    res.status(201).json({
-      success: true,
-      message: 'Booking created successfully',
-      booking
-    });
+    res.status(201).json({ success: true, message: 'Booking created successfully', booking });
 
   } catch (error) {
     logger.error('Create booking error:', error);
-    // Surface DB errors for debugging in staging
     res.status(500).json({
       success: false,
       message: error.code === '23502'
@@ -281,10 +250,9 @@ const createBooking = async (req, res) => {
  */
 const getBookings = async (req, res) => {
   try {
-    const userId = req.user.userId;
+    const userId   = req.user.userId;
     const userRole = req.user.role;
     const { status, page = 1, limit = 20 } = req.query;
-
     const offset = (parseInt(page) - 1) * parseInt(limit);
 
     let queryText = `
@@ -329,7 +297,6 @@ const getBookings = async (req, res) => {
 
     const result = await query(queryText, params);
 
-    // Count
     let countQuery = 'SELECT COUNT(*) FROM bookings WHERE deleted_at IS NULL';
     const countParams = [];
     let countParamCount = 0;
@@ -350,16 +317,16 @@ const getBookings = async (req, res) => {
     }
 
     const countResult = await query(countQuery, countParams);
-    const totalCount = parseInt(countResult.rows[0].count);
+    const totalCount  = parseInt(countResult.rows[0].count);
 
     res.status(200).json({
       success: true,
       bookings: result.rows,
       pagination: {
-        currentPage: parseInt(page),
-        totalPages: Math.ceil(totalCount / parseInt(limit)),
+        currentPage:   parseInt(page),
+        totalPages:    Math.ceil(totalCount / parseInt(limit)),
         totalBookings: totalCount,
-        limit: parseInt(limit)
+        limit:         parseInt(limit)
       }
     });
 
@@ -372,11 +339,14 @@ const getBookings = async (req, res) => {
 /**
  * Get single booking details
  * GET /api/bookings/:id
+ *
+ * BUG 4 FIX: Added v.location_address as vehicle_address so the frontend
+ * can display the vehicle's place name instead of a blank field.
  */
 const getBookingById = async (req, res) => {
   try {
-    const { id } = req.params;
-    const userId = req.user.userId;
+    const { id }   = req.params;
+    const userId   = req.user.userId;
 
     const result = await query(
       `SELECT 
@@ -387,6 +357,8 @@ const getBookingById = async (req, res) => {
         v.images as vehicle_images,
         v.location_lat as vehicle_lat,
         v.location_lng as vehicle_lng,
+        v.location_address as vehicle_address,
+        v.service_radius_km as vehicle_service_radius,
         farmer.full_name as farmer_name,
         farmer.phone_number as farmer_phone,
         farmer.profile_image_url as farmer_image,
@@ -420,12 +392,10 @@ const getBookingById = async (req, res) => {
  */
 const acceptBooking = async (req, res) => {
   try {
-    const { id } = req.params;
-    const userId = req.user.userId;
+    const { id }   = req.params;
+    const userId   = req.user.userId;
 
-    const bookingResult = await query(
-      'SELECT * FROM bookings WHERE id = $1 AND deleted_at IS NULL', [id]
-    );
+    const bookingResult = await query('SELECT * FROM bookings WHERE id = $1 AND deleted_at IS NULL', [id]);
     if (bookingResult.rows.length === 0) {
       return res.status(404).json({ success: false, message: 'Booking not found' });
     }
@@ -464,8 +434,8 @@ const acceptBooking = async (req, res) => {
  */
 const rejectBooking = async (req, res) => {
   try {
-    const { id } = req.params;
-    const userId = req.user.userId;
+    const { id }   = req.params;
+    const userId   = req.user.userId;
     const { reason, rejectionReason } = req.body;
     const rejectReason = reason || rejectionReason || 'Rejected by owner';
 
@@ -510,8 +480,8 @@ const rejectBooking = async (req, res) => {
  */
 const startWork = async (req, res) => {
   try {
-    const { id } = req.params;
-    const userId = req.user.userId;
+    const { id }   = req.params;
+    const userId   = req.user.userId;
 
     const bookingResult = await query('SELECT * FROM bookings WHERE id = $1 AND deleted_at IS NULL', [id]);
     if (bookingResult.rows.length === 0) {
@@ -548,11 +518,14 @@ const startWork = async (req, res) => {
 /**
  * Complete work (Owner only)
  * PUT /api/bookings/:id/complete
+ *
+ * BUG 7 FIX: If actual_hours is provided and pricing is hourly,
+ * recalculate total_farmer_pays using actual hours instead of estimated.
  */
 const completeWork = async (req, res) => {
   try {
-    const { id } = req.params;
-    const userId = req.user.userId;
+    const { id }   = req.params;
+    const userId   = req.user.userId;
     const { actualHours, completionNotes } = req.body;
 
     const bookingResult = await query('SELECT * FROM bookings WHERE id = $1 AND deleted_at IS NULL', [id]);
@@ -568,17 +541,33 @@ const completeWork = async (req, res) => {
       return res.status(400).json({ success: false, message: `Cannot complete work for booking in ${booking.status} status` });
     }
 
+    // BUG 7 FIX: recalculate final amount if hourly and actual_hours differs
+    const finalActualHours = actualHours ? parseFloat(actualHours) : (booking.estimated_hours || 1);
+    let finalBaseAmount      = parseFloat(booking.base_amount) || 0;
+    let finalTotalFarmerPays = parseFloat(booking.total_farmer_pays) || 0;
+
+    if (actualHours && booking.pricing_type === 'hourly' && booking.hourly_rate) {
+      const hourlyRate     = parseFloat(booking.hourly_rate);
+      finalBaseAmount      = hourlyRate * finalActualHours;
+      const discount       = parseFloat(booking.discount_amount) || 0;
+      const discountedBase = finalBaseAmount - discount;
+      const farmerFee      = discountedBase * 0.05;
+      finalTotalFarmerPays = discountedBase + farmerFee;
+    }
+
     const updateResult = await query(
       `UPDATE bookings 
-       SET status = 'completed', work_completed_at = NOW(), 
-           actual_hours = $1, completion_notes = $2, updated_at = NOW()
-       WHERE id = $3 RETURNING *`,
-      [actualHours || booking.estimated_hours, completionNotes || null, id]
+       SET status = 'completed', work_completed_at = NOW(),
+           actual_hours = $1, completion_notes = $2,
+           base_amount = $3, total_farmer_pays = $4,
+           updated_at = NOW()
+       WHERE id = $5 RETURNING *`,
+      [finalActualHours, completionNotes || null, finalBaseAmount, finalTotalFarmerPays, id]
     );
 
     setImmediate(async () => {
       try {
-        await notifyWorkCompleted(booking.farmer_id, booking.id, booking.booking_number, booking.total_farmer_pays);
+        await notifyWorkCompleted(booking.farmer_id, booking.id, booking.booking_number, finalTotalFarmerPays);
       } catch (e) { logger.error('Notification error:', e); }
     });
 
@@ -596,8 +585,8 @@ const completeWork = async (req, res) => {
  */
 const cancelBooking = async (req, res) => {
   try {
-    const { id } = req.params;
-    const userId = req.user.userId;
+    const { id }   = req.params;
+    const userId   = req.user.userId;
     const { reason, cancellationReason } = req.body;
     const cancelReason = reason || cancellationReason || 'Cancelled by user';
 
@@ -614,8 +603,7 @@ const cancelBooking = async (req, res) => {
       return res.status(400).json({ success: false, message: `Cannot cancel booking in ${booking.status} status` });
     }
 
-    const cancelledBy = booking.farmer_id === userId ? 'farmer' : 'owner';
-
+    const cancelledBy  = booking.farmer_id === userId ? 'farmer' : 'owner';
     const updateResult = await query(
       `UPDATE bookings 
        SET status = 'cancelled', cancelled_by = $1, cancellation_reason = $2,
@@ -632,12 +620,66 @@ const cancelBooking = async (req, res) => {
   }
 };
 
+/**
+ * Update payment method / status (Farmer records UPI or Cash payment)
+ * PUT /api/bookings/:id/payment
+ *
+ * BUG 11 FIX: This route was missing entirely. The frontend calls it when
+ * the farmer selects UPI or Cash in the payment modal after work is completed.
+ */
+const updatePayment = async (req, res) => {
+  try {
+    const { id }   = req.params;
+    const userId   = req.user.userId;
+    const { paymentMethod, paymentStatus } = req.body;
+
+    if (!paymentMethod) {
+      return res.status(400).json({ success: false, message: 'Payment method is required' });
+    }
+
+    const bookingResult = await query('SELECT * FROM bookings WHERE id = $1 AND deleted_at IS NULL', [id]);
+    if (bookingResult.rows.length === 0) {
+      return res.status(404).json({ success: false, message: 'Booking not found' });
+    }
+
+    const booking = bookingResult.rows[0];
+    if (booking.farmer_id !== userId) {
+      return res.status(403).json({ success: false, message: 'Only the farmer can update payment' });
+    }
+    if (booking.status !== 'completed') {
+      return res.status(400).json({ success: false, message: 'Payment can only be updated after work is completed' });
+    }
+    if (booking.payment_status === 'paid') {
+      return res.status(400).json({ success: false, message: 'Booking is already paid' });
+    }
+
+    const updateResult = await query(
+      `UPDATE bookings 
+       SET payment_method = $1, payment_status = $2, updated_at = NOW()
+       WHERE id = $3 RETURNING *`,
+      [paymentMethod, paymentStatus || 'paid', id]
+    );
+
+    logger.info('Payment updated', { bookingId: id, paymentMethod, userId });
+
+    res.status(200).json({
+      success: true,
+      message: 'Payment updated successfully',
+      booking: updateResult.rows[0]
+    });
+
+  } catch (error) {
+    logger.error('Update payment error:', error);
+    res.status(500).json({ success: false, message: 'Failed to update payment' });
+  }
+};
+
 // ── Helpers ──────────────────────────────────────────────────────────────────
 function calculateDistance(lat1, lon1, lat2, lon2) {
-  const R = 6371;
+  const R    = 6371;
   const dLat = (lat2 - lat1) * Math.PI / 180;
   const dLon = (lon2 - lon1) * Math.PI / 180;
-  const a =
+  const a    =
     Math.sin(dLat / 2) ** 2 +
     Math.cos(lat1 * Math.PI / 180) * Math.cos(lat2 * Math.PI / 180) *
     Math.sin(dLon / 2) ** 2;
@@ -652,5 +694,6 @@ module.exports = {
   rejectBooking,
   startWork,
   completeWork,
-  cancelBooking
+  cancelBooking,
+  updatePayment,   // BUG 11 FIX
 };

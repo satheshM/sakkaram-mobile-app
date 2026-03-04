@@ -1,7 +1,7 @@
 const express = require('express');
-const router = express.Router();
+const router  = express.Router();
 const paymentController = require('../controllers/paymentController');
-const { verifyToken } = require('../middlewares/authMiddleware');
+const { verifyToken, checkRole } = require('../middlewares/authMiddleware');
 
 /**
  * @route   POST /api/payments/initiate
@@ -27,7 +27,7 @@ router.post('/callback', verifyToken, paymentController.handlePaymentCallback);
 /**
  * @route   POST /api/payments/webhook
  * @desc    Handle Cashfree webhook
- * @access  Public (but signature verified)
+ * @access  Public (signature verified inside handler)
  */
 router.post('/webhook', paymentController.handleWebhook);
 
@@ -44,5 +44,15 @@ router.post('/refund', verifyToken, paymentController.initiateRefund);
  * @access  Private
  */
 router.get('/booking/:bookingId', verifyToken, paymentController.getBookingPayment);
+
+/**
+ * @route   POST /api/payments/wallet-payment
+ * @desc    Pay booking from wallet balance (Farmer)
+ * @access  Private (Farmer only)
+ *
+ * BUG 12 FIX: Route was missing. Called when farmer selects
+ * "Pay from Wallet" in the payment modal after work is completed.
+ */
+router.post('/wallet-payment', verifyToken, checkRole('farmer'), paymentController.walletPayment);
 
 module.exports = router;
