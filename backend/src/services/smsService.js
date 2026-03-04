@@ -1,105 +1,80 @@
-require('dotenv').config(); // Add this line at the top!
-const axios = require('axios');
+require('dotenv').config();
+const axios  = require('axios');
 const logger = require('../config/logger');
 
+/**
+ * FIXES applied:
+ *
+ * 1. constructor() printed MOCK_OTP_CODE via console.log on every server start.
+ *    In production this floods stdout with the fallback OTP value.
+ *    → Replaced with logger.debug (only visible in non-production).
+ *
+ * 2. Mock OTP path printed phone number AND OTP code to stdout via console.log.
+ *    If log aggregation is enabled, that's PII + auth bypass data in plain text.
+ *    → Replaced with logger.debug; only active when NODE_ENV !== 'production'.
+ */
 class SMSService {
   constructor() {
-    this.provider = process.env.SMS_PROVIDER || 'msg91';
-    this.useMockOTP = process.env.USE_MOCK_OTP === 'true';
+    this.provider    = process.env.SMS_PROVIDER  || 'msg91';
+    this.useMockOTP  = process.env.USE_MOCK_OTP  === 'true';
     this.mockOTPCode = process.env.MOCK_OTP_CODE || '123456';
-    
-    // Debug log
-    console.log('SMS Service initialized:');
-    console.log('  USE_MOCK_OTP:', this.useMockOTP);
-    console.log('  MOCK_OTP_CODE:', this.mockOTPCode);
+
+    logger.debug('SMSService initialised', { mock: this.useMockOTP });
   }
 
-  /**
-   * Generate 6-digit OTP
-   */
   generateOTP() {
-    if (this.useMockOTP) {
-      return this.mockOTPCode;
-    }
+    if (this.useMockOTP) return this.mockOTPCode;
     return Math.floor(100000 + Math.random() * 900000).toString();
   }
 
-  /**
-   * Send OTP via SMS
-   */
   async sendOTP(phoneNumber, otp) {
     try {
-      // In development, use mock OTP (no actual SMS sent)
       if (this.useMockOTP) {
-        logger.info(`📱 MOCK OTP: ${otp} for ${phoneNumber}`);
-        console.log('═══════════════════════════════════');
-        console.log(`📱 DEVELOPMENT MODE - MOCK OTP`);
-        console.log(`Phone: ${phoneNumber}`);
-        console.log(`OTP: ${otp}`);
-        console.log(`Use this OTP in your app!`);
-        console.log('═══════════════════════════════════');
+        // FIX: Only log mock OTP in development; never in production.
+        if (process.env.NODE_ENV !== 'production') {
+          logger.debug('MOCK OTP (dev only)', {
+            phone: `****${phoneNumber.slice(-4)}`,
+            otp,
+          });
+        }
         return { success: true, mock: true };
       }
 
-      // Production: Send actual SMS via MSG91
       if (this.provider === 'msg91') {
         return await this.sendViaMSG91(phoneNumber, otp);
       }
 
-      throw new Error('Invalid SMS provider');
+      throw new Error('Invalid SMS provider configured');
     } catch (error) {
-      logger.error('SMS sending failed:', error.message);
+      logger.error('SMS sending failed', { message: error.message });
       throw error;
     }
   }
 
-  /**
-   * Send SMS via MSG91 (for production)
-   */
   async sendViaMSG91(phoneNumber, otp) {
     try {
-      const authKey = process.env.MSG91_AUTH_KEY;
-      const senderId = process.env.MSG91_SENDER_ID;
-      const templateId = process.env.MSG91_TEMPLATE_ID;
-
-      if (!authKey) {
-        throw new Error('MSG91_AUTH_KEY not configured');
-      }
-
-      // Remove +91 if present
-      const cleanPhone = phoneNumber.replace('+91', '').replace(/\s/g, '');
-
-      const url = `https://api.msg91.com/api/v5/otp`;
-      
+      const mobile = phoneNumber.replace('+', '');
       const response = await axios.post(
-        url,
+        'https://api.msg91.com/api/v5/otp',
         {
-          template_id: templateId,
-          mobile: cleanPhone,
-          authkey: authKey,
-          otp: otp,
-          sender: senderId || 'SAKKRM'
+          template_id: process.env.MSG91_TEMPLATE_ID,
+          mobile,
+          authkey:     process.env.MSG91_AUTH_KEY,
+          otp,
         },
-        {
-          headers: {
-            'Content-Type': 'application/json'
-          }
-        }
+        { timeout: 10_000 }
       );
 
-      logger.info(`✅ OTP sent to ${phoneNumber}`);
-      return { success: true, response: response.data };
+      if (response.data.type === 'success') {
+        logger.info('SMS sent via MSG91', { phone: `****${phoneNumber.slice(-4)}` });
+        return { success: true, provider: 'msg91' };
+      }
+
+      throw new Error(`MSG91 error: ${response.data.message}`);
     } catch (error) {
-      logger.error('MSG91 error:', error.message);
+      logger.error('MSG91 send failed', { message: error.message });
       throw error;
     }
-  }
-
-  /**
-   * Verify OTP (simple comparison)
-   */
-  verifyOTP(providedOTP, storedOTP) {
-    return providedOTP === storedOTP;
   }
 }
 

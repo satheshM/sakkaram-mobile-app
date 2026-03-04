@@ -2,23 +2,22 @@ const { pool } = require('./db');
 const fs = require('fs');
 const path = require('path');
 
-const runUpdate = async () => {
+const runMigration = async () => {
   try {
-    console.log('📦 Updating booking schema...');
-    
-    const sqlPath = path.join(__dirname, 'updateBookingSchema.sql');
+    console.log('📦 Running Phase 1 – Missing DB Indexes migration...');
+
+    // Point to your new SQL file
+    const sqlPath = path.join(__dirname, 'phase1_indexes.sql');
     const sql = fs.readFileSync(sqlPath, 'utf8');
-    
+
     await pool.query(sql);
-    
-    console.log('✅ Booking schema updated!');
-    console.log('📋 Added columns: scheduled_date, scheduled_time, cancelled_by, cancellation_reason');
-    
+
+    console.log('✅ Phase 1 indexes created successfully!');
     process.exit(0);
   } catch (error) {
-    console.error('❌ Update failed:', error.message);
+    console.error('❌ Migration failed:', error);
     process.exit(1);
   }
 };
 
-runUpdate();
+runMigration();
