@@ -31,4 +31,20 @@ router.post('/refresh-token', authController.refreshToken);
  */
 router.post('/logout', verifyToken, authController.logout);
 
+/**
+ * ✅ FIX: Profile routes were MISSING — caused "Route not found" 404 on profile save
+ *
+ * @route   GET /api/auth/profile
+ * @desc    Get current user profile
+ * @access  Private
+ */
+router.get('/profile', verifyToken, authController.getProfile);
+
+/**
+ * @route   PUT /api/auth/profile
+ * @desc    Update current user profile (name, email, address)
+ * @access  Private
+ */
+router.put('/profile', verifyToken, authController.updateProfile);
+
 module.exports = router;
