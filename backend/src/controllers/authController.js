@@ -87,13 +87,7 @@ const sendOTP = async (req, res) => {
 };
 
 /**
- * ✅ FIXED: Two-Step Verify OTP and Login/Signup
- * 
- * FLOW:
- * 1. First call: Verify OTP only
- * 2. If new user: Return { isNewUser: true, requiresRegistration: true }
- * 3. Second call: Include fullName and role
- * 4. If existing user: Login directly with tokens
+ * Verify OTP and Login/Signup
  */
 const verifyOTP = async (req, res) => {
   try {
@@ -159,266 +153,90 @@ const verifyOTP = async (req, res) => {
       });
     }
 
-    // ✅ OTP is valid! Now determine if user is new or existing
-    const isNewUser = !user.full_name || user.full_name === null || user.full_name.trim() === '';
+    // OTP is valid!
+    let isNewUser = !user.full_name; // Check if profile is complete
 
-    // ✅ CASE 1: New user without registration details
-    if (isNewUser && (!fullName || !role)) {
-      // OTP verified but user needs to complete registration
-      logger.info(`New user detected: ${user.id}, awaiting registration details`);
-      
-      return res.status(200).json({
-        success: true,
-        isNewUser: true,
-        requiresRegistration: true,
-        message: 'OTP verified successfully. Please complete your profile.',
-        userId: user.id,
-      });
-    }
-
-    // ✅ CASE 2: New user with registration details
+    // If new user, update profile
     if (isNewUser && fullName && role) {
-      // Validate inputs
-      if (fullName.trim().length < 2) {
-        return res.status(400).json({
-          success: false,
-          message: 'Full name must be at least 2 characters'
-        });
-      }
-
-      if (!['farmer', 'owner'].includes(role)) {
-        return res.status(400).json({
-          success: false,
-          message: 'Role must be either farmer or owner'
-        });
-      }
-
-      // Update user profile
       await query(
         `UPDATE users 
          SET full_name = $1, role = $2, phone_verified = true, 
-             is_verified = true, otp_code = NULL, otp_expires_at = NULL, otp_attempts = 0,
-             updated_at = NOW()
+             is_verified = true, otp_code = NULL, otp_expires_at = NULL
          WHERE id = $3`,
-        [fullName.trim(), role, user.id]
+        [fullName, role, user.id]
       );
 
+      // Fetch updated user
+      const updatedUserResult = await query(
+        'SELECT * FROM users WHERE id = $1',
+        [user.id]
+      );
+      
+      const updatedUser = updatedUserResult.rows[0];
+      user.full_name = updatedUser.full_name;
+      user.role = updatedUser.role;
+      user.phone_verified = true;
+      user.is_verified = true;
+      
       // Create wallet for new user
       await query(
         'INSERT INTO wallets (user_id, balance) VALUES ($1, 0) ON CONFLICT (user_id) DO NOTHING',
         [user.id]
       );
-
-      // Update local user object
-      user.full_name = fullName.trim();
-      user.role = role;
-      user.phone_verified = true;
-      user.is_verified = true;
-
-      logger.info(`New user registered: ${user.id} - ${fullName} (${role})`);
-    }
-
-    // ✅ CASE 3: Existing user
-    if (!isNewUser) {
-      // Just verify phone and clear OTP
+    } else if (!isNewUser) {
+      // Existing user, just verify phone and clear OTP
       await query(
         `UPDATE users 
          SET phone_verified = true, is_verified = true, 
-             otp_code = NULL, otp_expires_at = NULL, otp_attempts = 0,
-             last_login_at = NOW(), updated_at = NOW()
+             otp_code = NULL, otp_expires_at = NULL
          WHERE id = $1`,
         [user.id]
       );
-
-      user.phone_verified = true;
-      user.is_verified = true;
-
-      logger.info(`Existing user logged in: ${user.id} - ${user.full_name}`);
+    } else {
+      // New user but missing fullName or role
+      return res.status(400).json({
+        success: false,
+        message: 'Full name and role are required for new users',
+        isNewUser: true
+      });
     }
 
-    // ✅ Generate tokens for both new and existing users
+    // Generate tokens
     const accessToken = authService.generateAccessToken(user.id, user.role);
     const refreshToken = authService.generateRefreshToken(user.id);
 
     // Create session
     await authService.createSession(user.id, refreshToken);
 
-    // Return success response
+    // Update last login
+    await authService.updateLastLogin(user.id);
+
+    logger.info(`User ${user.id} logged in successfully`);
+
     res.status(200).json({
       success: true,
-      message: isNewUser ? '🎉 Welcome to Sakkaram! Your account has been created.' : '👋 Welcome back!',
-      isNewUser: isNewUser,
+      message: isNewUser ? 'Account created successfully' : 'Login successful',
+      isNewUser,
       user: {
         id: user.id,
         phoneNumber: user.phone_number,
         fullName: user.full_name,
         role: user.role,
         profileImage: user.profile_image_url,
-        isVerified: user.is_verified,
-        createdAt: user.created_at,
+        isVerified: user.is_verified
       },
       tokens: {
         accessToken,
-        refreshToken,
-      },
+        refreshToken
+      }
     });
 
   } catch (error) {
     logger.error('Verify OTP error:', error);
     res.status(500).json({
       success: false,
-      message: 'Failed to verify OTP. Please try again.',
+      message: 'Failed to verify OTP',
       error: process.env.NODE_ENV === 'development' ? error.message : undefined
-    });
-  }
-};
-
-/**
- * Get User Profile
- */
-const getProfile = async (req, res) => {
-  try {
-    const userId = req.user.userId;
-
-    const userResult = await query(
-      'SELECT id, phone_number, full_name, role, email, profile_image_url, address, is_verified, phone_verified, created_at, updated_at FROM users WHERE id = $1 AND deleted_at IS NULL',
-      [userId]
-    );
-
-    if (userResult.rows.length === 0) {
-      return res.status(404).json({
-        success: false,
-        message: 'User not found'
-      });
-    }
-
-    const user = userResult.rows[0];
-
-    res.status(200).json({
-      success: true,
-      user: {
-        id: user.id,
-        phoneNumber: user.phone_number,
-        fullName: user.full_name,
-        role: user.role,
-        email: user.email,
-        profileImage: user.profile_image_url,
-        address: user.address,
-        isVerified: user.is_verified,
-        phoneVerified: user.phone_verified,
-        createdAt: user.created_at,
-        updatedAt: user.updated_at,
-      }
-    });
-
-  } catch (error) {
-    logger.error('Get profile error:', error);
-    res.status(500).json({
-      success: false,
-      message: 'Failed to get profile'
-    });
-  }
-};
-
-/**
- * Update User Profile
- */
-const updateProfile = async (req, res) => {
-  try {
-    const userId = req.user.userId;
-    const { fullName, email, address } = req.body;
-
-    // Validate inputs
-    const updates = [];
-    const values = [];
-    let paramCount = 1;
-
-    if (fullName !== undefined) {
-      if (fullName.trim().length < 2) {
-        return res.status(400).json({
-          success: false,
-          message: 'Full name must be at least 2 characters'
-        });
-      }
-      updates.push(`full_name = $${paramCount}`);
-      values.push(fullName.trim());
-      paramCount++;
-    }
-
-    if (email !== undefined) {
-      const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
-      if (email && !emailRegex.test(email)) {
-        return res.status(400).json({
-          success: false,
-          message: 'Invalid email format'
-        });
-      }
-      updates.push(`email = $${paramCount}`);
-      values.push(email || null);
-      paramCount++;
-    }
-
-    if (address !== undefined) {
-      updates.push(`address = $${paramCount}`);
-      values.push(address || null);
-      paramCount++;
-    }
-
-    if (updates.length === 0) {
-      return res.status(400).json({
-        success: false,
-        message: 'No fields to update'
-      });
-    }
-
-    // Add updated_at
-    updates.push(`updated_at = NOW()`);
-
-    // Add userId for WHERE clause
-    values.push(userId);
-
-    // Update user
-    const updateQuery = `
-      UPDATE users 
-      SET ${updates.join(', ')}
-      WHERE id = $${paramCount} AND deleted_at IS NULL
-      RETURNING id, phone_number, full_name, role, email, profile_image_url, address, is_verified, updated_at
-    `;
-
-    const result = await query(updateQuery, values);
-
-    if (result.rows.length === 0) {
-      return res.status(404).json({
-        success: false,
-        message: 'User not found'
-      });
-    }
-
-    const user = result.rows[0];
-
-    logger.info(`Profile updated for user: ${userId}`);
-
-    res.status(200).json({
-      success: true,
-      message: 'Profile updated successfully',
-      user: {
-        id: user.id,
-        phoneNumber: user.phone_number,
-        fullName: user.full_name,
-        role: user.role,
-        email: user.email,
-        profileImage: user.profile_image_url,
-        address: user.address,
-        isVerified: user.is_verified,
-        updatedAt: user.updated_at,
-      }
-    });
-
-  } catch (error) {
-    logger.error('Update profile error:', error);
-    res.status(500).json({
-      success: false,
-      message: 'Failed to update profile'
     });
   }
 };
@@ -509,8 +327,6 @@ const logout = async (req, res) => {
 module.exports = {
   sendOTP,
   verifyOTP,
-  getProfile,
-  updateProfile,
   refreshToken,
   logout
 };

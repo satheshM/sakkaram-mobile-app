@@ -10,6 +10,29 @@ const {
 } = require('../services/notificationService');
 
 /**
+ * CRITICAL FIX — serviceName vs serviceType mismatch:
+ *
+ * The mobile AddVehicle screen stores services as:
+ *   { serviceName: 'Ploughing', pricingType: 'hourly', hourlyRate: 500 }
+ *
+ * The old BookingCreate screen sent: serviceType = service.serviceName (the label)
+ * The old controller looked for: s.serviceType === serviceType  <-- always failed!
+ *
+ * FIX: Service lookup now checks BOTH s.serviceType AND s.serviceName so it
+ * works regardless of which key the owner used when adding the vehicle.
+ */
+const findService = (servicesOffered, serviceType) => {
+  if (!Array.isArray(servicesOffered)) return null;
+  return servicesOffered.find(
+    (s) =>
+      s.serviceType === serviceType ||
+      s.serviceName === serviceType ||
+      (s.serviceName || '').toLowerCase() === (serviceType || '').toLowerCase() ||
+      (s.serviceType || '').toLowerCase() === (serviceType || '').toLowerCase()
+  ) || null;
+};
+
+/**
  * Create a new booking
  * POST /api/bookings
  */
@@ -26,7 +49,8 @@ const createBooking = async (req, res) => {
       scheduledTime,
       landSizeAcres,
       estimatedHours,
-      notes
+      notes,
+      couponCode,
     } = req.body;
 
     // Validate required fields
@@ -34,6 +58,17 @@ const createBooking = async (req, res) => {
       return res.status(400).json({
         success: false,
         message: 'Vehicle, service type, and scheduled date are required'
+      });
+    }
+
+    // Validate date is not in the past
+    const bookingDate = new Date(scheduledDate);
+    const today = new Date();
+    today.setHours(0, 0, 0, 0);
+    if (bookingDate < today) {
+      return res.status(400).json({
+        success: false,
+        message: 'Scheduled date cannot be in the past'
       });
     }
 
@@ -64,25 +99,38 @@ const createBooking = async (req, res) => {
       });
     }
 
-    // Find matching service
+    // ✅ FIXED: Dual-key service lookup (serviceName OR serviceType)
     const servicesOffered = vehicle.services_offered || [];
-    const selectedService = servicesOffered.find(s => s.serviceType === serviceType);
+    const selectedService = findService(servicesOffered, serviceType);
 
-   
     if (!selectedService) {
+      // Debug: log what we have to help diagnose
+      logger.warn('Service not found', {
+        serviceTypeRequested: serviceType,
+        servicesAvailable: servicesOffered.map((s) => ({
+          serviceName: s.serviceName,
+          serviceType: s.serviceType,
+        })),
+      });
+
+      const availableServices = servicesOffered
+        .map((s) => s.serviceName || s.serviceType)
+        .filter(Boolean)
+        .join(', ');
+
       return res.status(400).json({
         success: false,
-        message: 'This service is not offered by this vehicle'
+        message: `Service "${serviceType}" not offered by this vehicle. Available: ${availableServices || 'none listed'}`
       });
     }
 
     // Calculate distance
     const distanceKm = farmerLocationLat && farmerLocationLng && vehicle.location_lat && vehicle.location_lng
       ? calculateDistance(
-          farmerLocationLat,
-          farmerLocationLng,
-          vehicle.location_lat,
-          vehicle.location_lng
+          parseFloat(farmerLocationLat),
+          parseFloat(farmerLocationLng),
+          parseFloat(vehicle.location_lat),
+          parseFloat(vehicle.location_lng)
         )
       : 0;
 
@@ -93,25 +141,59 @@ const createBooking = async (req, res) => {
     let fixedPrice = null;
 
     if (selectedService.pricingType === 'hourly') {
-      hourlyRate = selectedService.hourlyRate;
-      baseAmount = hourlyRate * (estimatedHours || 1);
+      hourlyRate = parseFloat(selectedService.hourlyRate);
+      baseAmount = hourlyRate * (parseFloat(estimatedHours) || 1);
     } else if (selectedService.pricingType === 'per_acre') {
-      perAcreRate = selectedService.perAcreRate;
-      baseAmount = perAcreRate * (landSizeAcres || 1);
+      perAcreRate = parseFloat(selectedService.perAcreRate);
+      baseAmount = perAcreRate * (parseFloat(landSizeAcres) || 1);
     } else if (selectedService.pricingType === 'fixed') {
-      fixedPrice = selectedService.fixedPrice;
+      fixedPrice = parseFloat(selectedService.fixedPrice);
       baseAmount = fixedPrice;
     }
 
+    // Apply coupon discount if provided
+    let discountAmount = 0;
+    if (couponCode) {
+      try {
+        const couponResult = await query(
+          `SELECT * FROM coupons 
+           WHERE code = $1 AND is_active = true 
+             AND (expires_at IS NULL OR expires_at > NOW())
+             AND (max_uses IS NULL OR uses_count < max_uses)`,
+          [couponCode.toUpperCase()]
+        );
+        if (couponResult.rows.length > 0) {
+          const coupon = couponResult.rows[0];
+          if (coupon.discount_type === 'percentage') {
+            discountAmount = baseAmount * (coupon.discount_value / 100);
+            if (coupon.max_discount_amount) {
+              discountAmount = Math.min(discountAmount, coupon.max_discount_amount);
+            }
+          } else {
+            discountAmount = Math.min(coupon.discount_value, baseAmount);
+          }
+          // Increment coupon use count
+          await query('UPDATE coupons SET uses_count = uses_count + 1 WHERE id = $1', [coupon.id]);
+        }
+      } catch (couponErr) {
+        logger.warn('Coupon apply error:', couponErr.message);
+      }
+    }
+
+    const discountedBase = baseAmount - discountAmount;
+
     // Calculate commission (5% from farmer, 5% from owner)
-    const farmerServiceFee = baseAmount * 0.05;
-    const ownerCommission = baseAmount * 0.05;
-    const platformEarning = farmerServiceFee + ownerCommission;
-    const totalFarmerPays = baseAmount + farmerServiceFee;
-    const totalOwnerReceives = baseAmount - ownerCommission;
+    const farmerServiceFee = discountedBase * 0.05;
+    const ownerCommission  = discountedBase * 0.05;
+    const platformEarning  = farmerServiceFee + ownerCommission;
+    const totalFarmerPays  = discountedBase + farmerServiceFee;
+    const totalOwnerReceives = discountedBase - ownerCommission;
 
     // Generate booking number
     const bookingNumber = `BK${Date.now()}${Math.floor(Math.random() * 1000)}`;
+
+    // Normalize service name for storage
+    const resolvedServiceName = selectedService.serviceName || selectedService.serviceType || serviceType;
 
     // Create booking
     const bookingResult = await query(
@@ -122,24 +204,26 @@ const createBooking = async (req, res) => {
         distance_km, scheduled_date, scheduled_time,
         land_size_acres, estimated_hours,
         pricing_type, hourly_rate, per_acre_rate, fixed_price,
-        base_amount, farmer_service_fee, owner_commission,
+        base_amount, discount_amount, farmer_service_fee, owner_commission,
         platform_earning, total_farmer_pays, total_owner_receives,
+        coupon_code,
         status, payment_status, notes, created_at
       ) VALUES (
         $1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14,
-        $15, $16, $17, $18, $19, $20, $21, $22, $23, $24,
-        'pending', 'pending', $25, NOW()
+        $15, $16, $17, $18, $19, $20, $21, $22, $23, $24, $25, $26,
+        'pending', 'pending', $27, NOW()
       ) RETURNING *`,
       [
         bookingNumber, farmerId, vehicleId, ownerId,
-        serviceType, vehicle.type,
-        farmerLocationLat, farmerLocationLng, farmerLocationAddress,
+        resolvedServiceName, vehicle.type,
+        farmerLocationLat || null, farmerLocationLng || null, farmerLocationAddress || null,
         distanceKm, scheduledDate, scheduledTime || '09:00',
-        landSizeAcres, estimatedHours,
+        landSizeAcres || null, estimatedHours || null,
         selectedService.pricingType, hourlyRate, perAcreRate, fixedPrice,
-        baseAmount, farmerServiceFee, ownerCommission,
+        baseAmount, discountAmount, farmerServiceFee, ownerCommission,
         platformEarning, totalFarmerPays, totalOwnerReceives,
-        notes
+        couponCode || null,
+        notes || null
       ]
     );
 
@@ -152,7 +236,6 @@ const createBooking = async (req, res) => {
           'SELECT full_name FROM users WHERE id = $1',
           [farmerId]
         );
-
         await notifyNewBooking(
           ownerId,
           booking.id,
@@ -164,12 +247,7 @@ const createBooking = async (req, res) => {
       }
     });
 
-    logger.info('Booking created', {
-      bookingId: booking.id,
-      bookingNumber,
-      farmerId,
-      vehicleId
-    });
+    logger.info('Booking created', { bookingId: booking.id, bookingNumber, farmerId, vehicleId });
 
     res.status(201).json({
       success: true,
@@ -179,9 +257,12 @@ const createBooking = async (req, res) => {
 
   } catch (error) {
     logger.error('Create booking error:', error);
+    // Surface DB errors for debugging in staging
     res.status(500).json({
       success: false,
-      message: 'Failed to create booking'
+      message: error.code === '23502'
+        ? 'Missing required booking field: ' + error.column
+        : 'Failed to create booking'
     });
   }
 };
@@ -196,7 +277,7 @@ const getBookings = async (req, res) => {
     const userRole = req.user.role;
     const { status, page = 1, limit = 20 } = req.query;
 
-    const offset = (page - 1) * limit;
+    const offset = (parseInt(page) - 1) * parseInt(limit);
 
     let queryText = `
       SELECT 
@@ -236,11 +317,11 @@ const getBookings = async (req, res) => {
     }
 
     queryText += ` ORDER BY b.created_at DESC LIMIT $${paramCount + 1} OFFSET $${paramCount + 2}`;
-    params.push(limit, offset);
+    params.push(parseInt(limit), offset);
 
     const result = await query(queryText, params);
 
-    // Get total count
+    // Count
     let countQuery = 'SELECT COUNT(*) FROM bookings WHERE deleted_at IS NULL';
     const countParams = [];
     let countParamCount = 0;
@@ -254,7 +335,6 @@ const getBookings = async (req, res) => {
       countQuery += ` AND owner_id = $${countParamCount}`;
       countParams.push(userId);
     }
-
     if (status) {
       countParamCount++;
       countQuery += ` AND status = $${countParamCount}`;
@@ -269,7 +349,7 @@ const getBookings = async (req, res) => {
       bookings: result.rows,
       pagination: {
         currentPage: parseInt(page),
-        totalPages: Math.ceil(totalCount / limit),
+        totalPages: Math.ceil(totalCount / parseInt(limit)),
         totalBookings: totalCount,
         limit: parseInt(limit)
       }
@@ -277,10 +357,7 @@ const getBookings = async (req, res) => {
 
   } catch (error) {
     logger.error('Get bookings error:', error);
-    res.status(500).json({
-      success: false,
-      message: 'Failed to fetch bookings'
-    });
+    res.status(500).json({ success: false, message: 'Failed to fetch bookings' });
   }
 };
 
@@ -318,23 +395,14 @@ const getBookingById = async (req, res) => {
     );
 
     if (result.rows.length === 0) {
-      return res.status(404).json({
-        success: false,
-        message: 'Booking not found'
-      });
+      return res.status(404).json({ success: false, message: 'Booking not found' });
     }
 
-    res.status(200).json({
-      success: true,
-      booking: result.rows[0]
-    });
+    res.status(200).json({ success: true, booking: result.rows[0] });
 
   } catch (error) {
     logger.error('Get booking error:', error);
-    res.status(500).json({
-      success: false,
-      message: 'Failed to fetch booking'
-    });
+    res.status(500).json({ success: false, message: 'Failed to fetch booking' });
   }
 };
 
@@ -347,81 +415,38 @@ const acceptBooking = async (req, res) => {
     const { id } = req.params;
     const userId = req.user.userId;
 
-    // Get booking
     const bookingResult = await query(
-      'SELECT * FROM bookings WHERE id = $1 AND deleted_at IS NULL',
-      [id]
+      'SELECT * FROM bookings WHERE id = $1 AND deleted_at IS NULL', [id]
     );
-
     if (bookingResult.rows.length === 0) {
-      return res.status(404).json({
-        success: false,
-        message: 'Booking not found'
-      });
+      return res.status(404).json({ success: false, message: 'Booking not found' });
     }
 
     const booking = bookingResult.rows[0];
-
-    // Check if user is owner
     if (booking.owner_id !== userId) {
-      return res.status(403).json({
-        success: false,
-        message: 'Only the vehicle owner can accept this booking'
-      });
+      return res.status(403).json({ success: false, message: 'Only the vehicle owner can accept this booking' });
     }
-
-    // Check if booking is in pending status
     if (booking.status !== 'pending') {
-      return res.status(400).json({
-        success: false,
-        message: `Cannot accept booking in ${booking.status} status`
-      });
+      return res.status(400).json({ success: false, message: `Cannot accept booking in ${booking.status} status` });
     }
 
-    // Update booking status
     const updateResult = await query(
-      `UPDATE bookings 
-       SET status = 'confirmed', updated_at = NOW()
-       WHERE id = $1
-       RETURNING *`,
+      `UPDATE bookings SET status = 'confirmed', updated_at = NOW() WHERE id = $1 RETURNING *`,
       [id]
     );
 
-    const updatedBooking = updateResult.rows[0];
-
-    // Send notification to farmer (non-blocking)
     setImmediate(async () => {
       try {
-        const vehicleResult = await query(
-          'SELECT name FROM vehicles WHERE id = $1',
-          [booking.vehicle_id]
-        );
-
-        await notifyBookingAccepted(
-          booking.farmer_id,
-          booking.id,
-          booking.booking_number,
-          vehicleResult.rows[0]?.name || 'Vehicle'
-        );
-      } catch (notifError) {
-        logger.error('Failed to send notification:', notifError);
-      }
+        const vehicleResult = await query('SELECT name FROM vehicles WHERE id = $1', [booking.vehicle_id]);
+        await notifyBookingAccepted(booking.farmer_id, booking.id, booking.booking_number, vehicleResult.rows[0]?.name || 'Vehicle');
+      } catch (e) { logger.error('Notification error:', e); }
     });
 
-    logger.info('Booking accepted', { bookingId: id, ownerId: userId });
-
-    res.status(200).json({
-      success: true,
-      message: 'Booking accepted successfully',
-      booking: updatedBooking
-    });
+    res.status(200).json({ success: true, message: 'Booking accepted successfully', booking: updateResult.rows[0] });
 
   } catch (error) {
     logger.error('Accept booking error:', error);
-    res.status(500).json({
-      success: false,
-      message: 'Failed to accept booking'
-    });
+    res.status(500).json({ success: false, message: 'Failed to accept booking' });
   }
 };
 
@@ -433,86 +458,41 @@ const rejectBooking = async (req, res) => {
   try {
     const { id } = req.params;
     const userId = req.user.userId;
-    const { rejectionReason } = req.body;
+    const { reason, rejectionReason } = req.body;
+    const rejectReason = reason || rejectionReason || 'Rejected by owner';
 
-    // Get booking
-    const bookingResult = await query(
-      'SELECT * FROM bookings WHERE id = $1 AND deleted_at IS NULL',
-      [id]
-    );
-
+    const bookingResult = await query('SELECT * FROM bookings WHERE id = $1 AND deleted_at IS NULL', [id]);
     if (bookingResult.rows.length === 0) {
-      return res.status(404).json({
-        success: false,
-        message: 'Booking not found'
-      });
+      return res.status(404).json({ success: false, message: 'Booking not found' });
     }
 
     const booking = bookingResult.rows[0];
-
-    // Check if user is owner
     if (booking.owner_id !== userId) {
-      return res.status(403).json({
-        success: false,
-        message: 'Only the vehicle owner can reject this booking'
-      });
+      return res.status(403).json({ success: false, message: 'Only the vehicle owner can reject this booking' });
     }
-
-    // Check if booking is in pending status
     if (booking.status !== 'pending') {
-      return res.status(400).json({
-        success: false,
-        message: `Cannot reject booking in ${booking.status} status`
-      });
+      return res.status(400).json({ success: false, message: `Cannot reject booking in ${booking.status} status` });
     }
 
-    // Update booking status
     const updateResult = await query(
       `UPDATE bookings 
-       SET status = 'rejected',
-           cancellation_reason = $1,
-           cancelled_at = NOW(),
-           updated_at = NOW()
-       WHERE id = $2
-       RETURNING *`,
-      [rejectionReason || 'Rejected by owner', id]
+       SET status = 'rejected', cancellation_reason = $1, cancelled_at = NOW(), updated_at = NOW()
+       WHERE id = $2 RETURNING *`,
+      [rejectReason, id]
     );
 
-    const updatedBooking = updateResult.rows[0];
-
-    // Send notification to farmer (non-blocking)
     setImmediate(async () => {
       try {
-        const vehicleResult = await query(
-          'SELECT name FROM vehicles WHERE id = $1',
-          [booking.vehicle_id]
-        );
-
-        await notifyBookingRejected(
-          booking.farmer_id,
-          booking.id,
-          booking.booking_number,
-          vehicleResult.rows[0]?.name || 'Vehicle'
-        );
-      } catch (notifError) {
-        logger.error('Failed to send notification:', notifError);
-      }
+        const vehicleResult = await query('SELECT name FROM vehicles WHERE id = $1', [booking.vehicle_id]);
+        await notifyBookingRejected(booking.farmer_id, booking.id, booking.booking_number, vehicleResult.rows[0]?.name || 'Vehicle');
+      } catch (e) { logger.error('Notification error:', e); }
     });
 
-    logger.info('Booking rejected', { bookingId: id, ownerId: userId });
-
-    res.status(200).json({
-      success: true,
-      message: 'Booking rejected',
-      booking: updatedBooking
-    });
+    res.status(200).json({ success: true, message: 'Booking rejected', booking: updateResult.rows[0] });
 
   } catch (error) {
     logger.error('Reject booking error:', error);
-    res.status(500).json({
-      success: false,
-      message: 'Failed to reject booking'
-    });
+    res.status(500).json({ success: false, message: 'Failed to reject booking' });
   }
 };
 
@@ -525,77 +505,35 @@ const startWork = async (req, res) => {
     const { id } = req.params;
     const userId = req.user.userId;
 
-    // Get booking
-    const bookingResult = await query(
-      'SELECT * FROM bookings WHERE id = $1 AND deleted_at IS NULL',
-      [id]
-    );
-
+    const bookingResult = await query('SELECT * FROM bookings WHERE id = $1 AND deleted_at IS NULL', [id]);
     if (bookingResult.rows.length === 0) {
-      return res.status(404).json({
-        success: false,
-        message: 'Booking not found'
-      });
+      return res.status(404).json({ success: false, message: 'Booking not found' });
     }
 
     const booking = bookingResult.rows[0];
-
-    // Check if user is owner
     if (booking.owner_id !== userId) {
-      return res.status(403).json({
-        success: false,
-        message: 'Only the vehicle owner can start work'
-      });
+      return res.status(403).json({ success: false, message: 'Only the vehicle owner can start work' });
     }
-
-    // Check if booking is confirmed
     if (booking.status !== 'confirmed') {
-      return res.status(400).json({
-        success: false,
-        message: `Cannot start work for booking in ${booking.status} status`
-      });
+      return res.status(400).json({ success: false, message: `Cannot start work for booking in ${booking.status} status` });
     }
 
-    // Update booking status
     const updateResult = await query(
-      `UPDATE bookings 
-       SET status = 'in_progress',
-           work_started_at = NOW(),
-           updated_at = NOW()
-       WHERE id = $1
-       RETURNING *`,
+      `UPDATE bookings SET status = 'in_progress', work_started_at = NOW(), updated_at = NOW() WHERE id = $1 RETURNING *`,
       [id]
     );
 
-    const updatedBooking = updateResult.rows[0];
-
-    // Send notification to farmer (non-blocking)
     setImmediate(async () => {
       try {
-        await notifyWorkStarted(
-          booking.farmer_id,
-          booking.id,
-          booking.booking_number
-        );
-      } catch (notifError) {
-        logger.error('Failed to send notification:', notifError);
-      }
+        await notifyWorkStarted(booking.farmer_id, booking.id, booking.booking_number);
+      } catch (e) { logger.error('Notification error:', e); }
     });
 
-    logger.info('Work started', { bookingId: id, ownerId: userId });
-
-    res.status(200).json({
-      success: true,
-      message: 'Work started successfully',
-      booking: updatedBooking
-    });
+    res.status(200).json({ success: true, message: 'Work started successfully', booking: updateResult.rows[0] });
 
   } catch (error) {
     logger.error('Start work error:', error);
-    res.status(500).json({
-      success: false,
-      message: 'Failed to start work'
-    });
+    res.status(500).json({ success: false, message: 'Failed to start work' });
   }
 };
 
@@ -609,80 +547,38 @@ const completeWork = async (req, res) => {
     const userId = req.user.userId;
     const { actualHours, completionNotes } = req.body;
 
-    // Get booking
-    const bookingResult = await query(
-      'SELECT * FROM bookings WHERE id = $1 AND deleted_at IS NULL',
-      [id]
-    );
-
+    const bookingResult = await query('SELECT * FROM bookings WHERE id = $1 AND deleted_at IS NULL', [id]);
     if (bookingResult.rows.length === 0) {
-      return res.status(404).json({
-        success: false,
-        message: 'Booking not found'
-      });
+      return res.status(404).json({ success: false, message: 'Booking not found' });
     }
 
     const booking = bookingResult.rows[0];
-
-    // Check if user is owner
     if (booking.owner_id !== userId) {
-      return res.status(403).json({
-        success: false,
-        message: 'Only the vehicle owner can complete work'
-      });
+      return res.status(403).json({ success: false, message: 'Only the vehicle owner can complete work' });
     }
-
-    // Check if booking is in progress
     if (booking.status !== 'in_progress') {
-      return res.status(400).json({
-        success: false,
-        message: `Cannot complete work for booking in ${booking.status} status`
-      });
+      return res.status(400).json({ success: false, message: `Cannot complete work for booking in ${booking.status} status` });
     }
 
-    // Update booking status
     const updateResult = await query(
       `UPDATE bookings 
-       SET status = 'completed',
-           work_completed_at = NOW(),
-           actual_hours = $1,
-           completion_notes = $2,
-           updated_at = NOW()
-       WHERE id = $3
-       RETURNING *`,
-      [actualHours || booking.estimated_hours, completionNotes, id]
+       SET status = 'completed', work_completed_at = NOW(), 
+           actual_hours = $1, completion_notes = $2, updated_at = NOW()
+       WHERE id = $3 RETURNING *`,
+      [actualHours || booking.estimated_hours, completionNotes || null, id]
     );
 
-    const updatedBooking = updateResult.rows[0];
-
-    // Send notification to farmer (non-blocking)
     setImmediate(async () => {
       try {
-        await notifyWorkCompleted(
-          booking.farmer_id,
-          booking.id,
-          booking.booking_number,
-          booking.total_farmer_pays
-        );
-      } catch (notifError) {
-        logger.error('Failed to send notification:', notifError);
-      }
+        await notifyWorkCompleted(booking.farmer_id, booking.id, booking.booking_number, booking.total_farmer_pays);
+      } catch (e) { logger.error('Notification error:', e); }
     });
 
-    logger.info('Work completed', { bookingId: id, ownerId: userId });
-
-    res.status(200).json({
-      success: true,
-      message: 'Work completed successfully',
-      booking: updatedBooking
-    });
+    res.status(200).json({ success: true, message: 'Work completed successfully', booking: updateResult.rows[0] });
 
   } catch (error) {
     logger.error('Complete work error:', error);
-    res.status(500).json({
-      success: false,
-      message: 'Failed to complete work'
-    });
+    res.status(500).json({ success: false, message: 'Failed to complete work' });
   }
 };
 
@@ -694,83 +590,50 @@ const cancelBooking = async (req, res) => {
   try {
     const { id } = req.params;
     const userId = req.user.userId;
-    const { cancellationReason } = req.body;
+    const { reason, cancellationReason } = req.body;
+    const cancelReason = reason || cancellationReason || 'Cancelled by user';
 
-    // Get booking
-    const bookingResult = await query(
-      'SELECT * FROM bookings WHERE id = $1 AND deleted_at IS NULL',
-      [id]
-    );
-
+    const bookingResult = await query('SELECT * FROM bookings WHERE id = $1 AND deleted_at IS NULL', [id]);
     if (bookingResult.rows.length === 0) {
-      return res.status(404).json({
-        success: false,
-        message: 'Booking not found'
-      });
+      return res.status(404).json({ success: false, message: 'Booking not found' });
     }
 
     const booking = bookingResult.rows[0];
-
-    // Check if user is farmer or owner
     if (booking.farmer_id !== userId && booking.owner_id !== userId) {
-      return res.status(403).json({
-        success: false,
-        message: 'You are not authorized to cancel this booking'
-      });
+      return res.status(403).json({ success: false, message: 'You are not authorized to cancel this booking' });
+    }
+    if (['completed', 'cancelled', 'rejected'].includes(booking.status)) {
+      return res.status(400).json({ success: false, message: `Cannot cancel booking in ${booking.status} status` });
     }
 
-    // Check if booking can be cancelled
-    if (booking.status === 'completed' || booking.status === 'cancelled') {
-      return res.status(400).json({
-        success: false,
-        message: `Cannot cancel booking in ${booking.status} status`
-      });
-    }
-
-    // Determine who cancelled
     const cancelledBy = booking.farmer_id === userId ? 'farmer' : 'owner';
 
-    // Update booking status
     const updateResult = await query(
       `UPDATE bookings 
-       SET status = 'cancelled',
-           cancelled_by = $1,
-           cancellation_reason = $2,
-           cancelled_at = NOW(),
-           updated_at = NOW()
-       WHERE id = $3
-       RETURNING *`,
-      [cancelledBy, cancellationReason || 'Cancelled by user', id]
+       SET status = 'cancelled', cancelled_by = $1, cancellation_reason = $2,
+           cancelled_at = NOW(), updated_at = NOW()
+       WHERE id = $3 RETURNING *`,
+      [cancelledBy, cancelReason, id]
     );
 
-    logger.info('Booking cancelled', { bookingId: id, cancelledBy, userId });
-
-    res.status(200).json({
-      success: true,
-      message: 'Booking cancelled successfully',
-      booking: updateResult.rows[0]
-    });
+    res.status(200).json({ success: true, message: 'Booking cancelled successfully', booking: updateResult.rows[0] });
 
   } catch (error) {
     logger.error('Cancel booking error:', error);
-    res.status(500).json({
-      success: false,
-      message: 'Failed to cancel booking'
-    });
+    res.status(500).json({ success: false, message: 'Failed to cancel booking' });
   }
 };
 
-// Helper: Calculate distance between two points
+// ── Helpers ──────────────────────────────────────────────────────────────────
 function calculateDistance(lat1, lon1, lat2, lon2) {
-  const R = 6371; // Radius of Earth in km
+  const R = 6371;
   const dLat = (lat2 - lat1) * Math.PI / 180;
   const dLon = (lon2 - lon1) * Math.PI / 180;
   const a =
-    Math.sin(dLat / 2) * Math.sin(dLat / 2) +
+    Math.sin(dLat / 2) ** 2 +
     Math.cos(lat1 * Math.PI / 180) * Math.cos(lat2 * Math.PI / 180) *
-    Math.sin(dLon / 2) * Math.sin(dLon / 2);
-  const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
-  return R * c;
+    Math.sin(dLon / 2) ** 2;
+  return R * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
 }
 
 module.exports = {
