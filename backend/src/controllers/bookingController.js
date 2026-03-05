@@ -457,14 +457,16 @@ const submitOfflinePayment = async (req, res) => {
       [paymentMethod, note || null, id]
     );
 
-    // Notify owner
+    // Notify owner that farmer submitted offline payment
     setImmediate(async () => {
       try {
-        const { notifyPaymentPendingConfirmation } = require('../services/notificationService');
-        if (notifyPaymentPendingConfirmation) {
-          await notifyPaymentPendingConfirmation(b.owner_id, b.id, b.booking_number, paymentMethod);
-        }
-      } catch (e) { logger.warn('Notify payment pending:', e.message); }
+        // notifyPaymentPendingConfirmation doesn't exist yet — use notifyWorkCompleted
+        // as a fallback so the owner gets an in-app alert
+        await notifyWorkCompleted(
+          b.owner_id, b.id, b.booking_number,
+          `Farmer reported ${paymentMethod.toUpperCase()} payment — tap to confirm`
+        );
+      } catch (e) { logger.warn('Notify payment pending (non-critical):', e.message); }
     });
 
     logger.info('Offline payment submitted', { bookingId: id, paymentMethod, userId });
