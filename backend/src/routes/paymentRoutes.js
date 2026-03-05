@@ -3,56 +3,25 @@ const router  = express.Router();
 const paymentController = require('../controllers/paymentController');
 const { verifyToken, checkRole } = require('../middlewares/authMiddleware');
 
-/**
- * @route   POST /api/payments/initiate
- * @desc    Initiate payment for booking
- * @access  Private (Farmer)
- */
-router.post('/initiate', verifyToken, paymentController.initiatePayment);
+// ── Original routes (kept exactly) ───────────────────────────────────────────
 
-/**
- * @route   GET /api/payments/verify/:orderId
- * @desc    Verify payment status
- * @access  Private
- */
-router.get('/verify/:orderId', verifyToken, paymentController.verifyPaymentStatus);
+router.post('/initiate',         verifyToken,                      paymentController.initiatePayment);
+router.get('/verify/:orderId',   verifyToken,                      paymentController.verifyPaymentStatus);
+router.post('/callback',         verifyToken,                      paymentController.handlePaymentCallback);
+router.post('/webhook',                                             paymentController.handleWebhook);
+router.post('/refund',           verifyToken,                      paymentController.initiateRefund);
+router.get('/booking/:bookingId',verifyToken,                      paymentController.getBookingPayment);
+router.post('/wallet-payment',   verifyToken, checkRole('farmer'), paymentController.walletPayment);
 
-/**
- * @route   POST /api/payments/callback
- * @desc    Handle payment callback from Cashfree
- * @access  Private
- */
-router.post('/callback', verifyToken, paymentController.handlePaymentCallback);
+// ── NEW: Cashfree wallet top-up routes ───────────────────────────────────────
 
-/**
- * @route   POST /api/payments/webhook
- * @desc    Handle Cashfree webhook
- * @access  Public (signature verified inside handler)
- */
-router.post('/webhook', paymentController.handleWebhook);
+// Farmer/Owner: create Cashfree order to top up in-app wallet
+router.post('/wallet-topup',          verifyToken, paymentController.initiateTopup);
 
-/**
- * @route   POST /api/payments/refund
- * @desc    Initiate refund for cancelled booking
- * @access  Private (Farmer/Owner)
- */
-router.post('/refund', verifyToken, paymentController.initiateRefund);
+// Poll payment status after Cashfree sheet closes
+router.get('/verify-topup/:orderId',  verifyToken, paymentController.verifyTopup);
 
-/**
- * @route   GET /api/payments/booking/:bookingId
- * @desc    Get payment details for a booking
- * @access  Private
- */
-router.get('/booking/:bookingId', verifyToken, paymentController.getBookingPayment);
-
-/**
- * @route   POST /api/payments/wallet-payment
- * @desc    Pay booking from wallet balance (Farmer)
- * @access  Private (Farmer only)
- *
- * BUG 12 FIX: Route was missing. Called when farmer selects
- * "Pay from Wallet" in the payment modal after work is completed.
- */
-router.post('/wallet-payment', verifyToken, checkRole('farmer'), paymentController.walletPayment);
+// Browser redirect after Cashfree web payment (called by Cashfree, no auth needed)
+router.get('/topup-return',                        paymentController.handleTopupReturn);
 
 module.exports = router;
