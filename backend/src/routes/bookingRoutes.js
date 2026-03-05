@@ -3,70 +3,23 @@ const router  = express.Router();
 const bookingController = require('../controllers/bookingController');
 const { verifyToken, checkRole } = require('../middlewares/authMiddleware');
 
-/**
- * @route   POST /api/bookings
- * @desc    Create booking (Farmer)
- * @access  Private (Farmer only)
- */
-router.post('/', verifyToken, checkRole('farmer'), bookingController.createBooking);
+router.post('/',          verifyToken, checkRole('farmer'), bookingController.createBooking);
+router.get('/',           verifyToken, bookingController.getBookings);
+router.get('/:id',        verifyToken, bookingController.getBookingById);
+
+router.put('/:id/accept',   verifyToken, checkRole('owner'),  bookingController.acceptBooking);
+router.put('/:id/reject',   verifyToken, checkRole('owner'),  bookingController.rejectBooking);
+router.put('/:id/start',    verifyToken, checkRole('owner'),  bookingController.startWork);
+router.put('/:id/complete', verifyToken, checkRole('owner'),  bookingController.completeWork);
+router.put('/:id/cancel',   verifyToken,                      bookingController.cancelBooking);
+router.put('/:id/payment',  verifyToken, checkRole('farmer'), bookingController.updatePayment);
 
 /**
- * @route   GET /api/bookings
- * @desc    Get all bookings (filtered by role)
- * @access  Private
+ * NEW: Offline payment flow
+ * Farmer submits offline payment → Owner confirms receipt → Platform deducts commission
  */
-router.get('/', verifyToken, bookingController.getBookings);
-
-/**
- * @route   GET /api/bookings/:id
- * @desc    Get single booking details
- * @access  Private
- */
-router.get('/:id', verifyToken, bookingController.getBookingById);
-
-/**
- * @route   PUT /api/bookings/:id/accept
- * @desc    Accept booking (Owner)
- * @access  Private (Owner only)
- */
-router.put('/:id/accept', verifyToken, checkRole('owner'), bookingController.acceptBooking);
-
-/**
- * @route   PUT /api/bookings/:id/reject
- * @desc    Reject booking (Owner)
- * @access  Private (Owner only)
- */
-router.put('/:id/reject', verifyToken, checkRole('owner'), bookingController.rejectBooking);
-
-/**
- * @route   PUT /api/bookings/:id/start
- * @desc    Start work (Owner)
- * @access  Private (Owner only)
- */
-router.put('/:id/start', verifyToken, checkRole('owner'), bookingController.startWork);
-
-/**
- * @route   PUT /api/bookings/:id/complete
- * @desc    Complete work (Owner)
- * @access  Private (Owner only)
- */
-router.put('/:id/complete', verifyToken, checkRole('owner'), bookingController.completeWork);
-
-/**
- * @route   PUT /api/bookings/:id/cancel
- * @desc    Cancel booking (Farmer or Owner)
- * @access  Private
- */
-router.put('/:id/cancel', verifyToken, bookingController.cancelBooking);
-
-/**
- * @route   PUT /api/bookings/:id/payment
- * @desc    Update payment method/status after work complete (Farmer)
- * @access  Private (Farmer only)
- *
- * BUG 11 FIX: This route was missing. Called by the frontend payment modal
- * when farmer selects UPI or Cash as payment method.
- */
-router.put('/:id/payment', verifyToken, checkRole('farmer'), bookingController.updatePayment);
+router.post('/:id/offline-payment',   verifyToken, checkRole('farmer'), bookingController.submitOfflinePayment);
+router.put('/:id/confirm-payment',    verifyToken, checkRole('owner'),  bookingController.confirmPaymentReceived);
+router.get('/owner/pending-payments', verifyToken, checkRole('owner'),  bookingController.getPendingPaymentConfirmations);
 
 module.exports = router;
