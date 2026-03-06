@@ -100,6 +100,9 @@ app.use('/api/notifications', notificationRoutes);
 const adminRoutes = require('./routes/adminRoutes');
 app.use('/api/admin', adminRoutes);
 
+const supportRoutes = require('./routes/supportRoutes');
+app.use('/api/support', supportRoutes);
+
 const searchRoutes = require('./routes/searchRoutes');
 app.use('/api/search', searchRoutes);
 

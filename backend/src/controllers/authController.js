@@ -179,10 +179,17 @@ const verifyOTP = async (req, res) => {
     const refreshToken = authService.generateRefreshToken(user.id);
     await authService.createSession(user.id, refreshToken);
 
+    // Phase 6b: blocked users get tokens (so they can reach support chat)
+    // but isBlocked=true tells the app to show the blocked/chat screen
+    const isBlocked = user.is_active === false;
+
     return res.status(200).json({
       success:   true,
       isNewUser,
-      message:   isNewUser ? 'Welcome to Sakkaram! Account created.' : 'Welcome back!',
+      isBlocked,
+      message:   isBlocked
+        ? 'Your account is blocked. You can contact support below.'
+        : isNewUser ? 'Welcome to Sakkaram! Account created.' : 'Welcome back!',
       user: {
         id:           user.id,
         phoneNumber:  user.phone_number,
@@ -310,7 +317,8 @@ const refreshToken = async (req, res) => {
     }
 
     return res.status(200).json({
-      success: true,
+      success:     true,
+      isBlocked:   user.is_active === false,
       accessToken: authService.generateAccessToken(user.id, user.role),
     });
   } catch (error) {
