@@ -1,5 +1,6 @@
 const { pool } = require('../config/db');
 const logger = require('../config/logger');
+const pushService = require('./pushService'); // Phase 8: push delivery
 
 /**
  * Notification Types
@@ -45,6 +46,10 @@ const createNotification = async (userId, type, title, message, referenceType = 
       userId,
       type
     });
+
+    // Phase 8: fire push notification alongside DB insert — non-blocking, never throws
+    pushService.sendPush(userId, title, message, { type, referenceType, referenceId })
+      .catch(() => {}); // already handled inside sendPush, extra safety here
 
     return result.rows[0];
 

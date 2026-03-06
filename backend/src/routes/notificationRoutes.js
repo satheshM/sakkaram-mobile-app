@@ -2,6 +2,22 @@ const express = require('express');
 const router = express.Router();
 const notificationController = require('../controllers/notificationController');
 const { verifyToken } = require('../middlewares/authMiddleware');
+const { savePushToken } = require('../services/pushService');
+const logger = require('../config/logger');
+
+// Phase 8: Register/update Expo push token
+// POST /api/notifications/push-token
+router.post('/push-token', verifyToken, async (req, res) => {
+  try {
+    const { token } = req.body;
+    if (!token) return res.status(400).json({ success: false, message: 'Token is required' });
+    await savePushToken(req.user.userId, token);
+    res.status(200).json({ success: true, message: 'Push token registered' });
+  } catch (err) {
+    logger.error('Save push token error:', err.message);
+    res.status(500).json({ success: false, message: 'Failed to save push token' });
+  }
+});
 
 /**
  * @route   GET /api/notifications/unread-count
