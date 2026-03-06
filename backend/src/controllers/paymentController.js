@@ -323,18 +323,85 @@ const verifyTopup = async (req, res) => {
 const handleTopupReturn = async (req, res) => {
   try {
     const { orderId } = req.query;
-    if (!orderId) return res.redirect(`${process.env.FRONTEND_URL || 'sakkaram://'}/wallet?topup=error`);
+
+    // Deep link back into the Expo/React Native app
+    // In dev: exp://  In prod build: sakkaram://
+    const appScheme = process.env.APP_SCHEME || 'sakkaram';
+
+    if (!orderId) {
+      return res.redirect(`${appScheme}://wallet?topup=error`);
+    }
 
     const result = await verifyWalletTopup(orderId);
 
     if (result.success) {
-      return res.redirect(`${process.env.FRONTEND_URL || 'sakkaram://'}/wallet?topup=success&amount=${result.amount}`);
+      // Show a simple HTML page that redirects into the app
+      // This handles both cases: WebView catches the URL, or user taps the button
+      return res.send(`
+        <!DOCTYPE html>
+        <html>
+        <head>
+          <meta charset="utf-8">
+          <meta name="viewport" content="width=device-width, initial-scale=1">
+          <title>Payment Successful</title>
+          <style>
+            body { font-family: sans-serif; text-align: center; padding: 40px; background: #f0fdf4; }
+            h1 { color: #16a34a; font-size: 2rem; }
+            p  { color: #555; font-size: 1rem; margin: 12px 0; }
+            a  { display: inline-block; margin-top: 20px; padding: 14px 28px;
+                 background: #16a34a; color: white; border-radius: 10px;
+                 text-decoration: none; font-weight: bold; font-size: 1rem; }
+          </style>
+          <script>
+            // Auto-redirect into app after 1 second
+            setTimeout(function() {
+              window.location.href = '${appScheme}://wallet?topup=success&amount=${result.amount}';
+            }, 1000);
+          </script>
+        </head>
+        <body>
+          <h1>✅ Payment Successful!</h1>
+          <p>₹${parseFloat(result.amount).toFixed(2)} will be added to your wallet.</p>
+          <p>Redirecting back to app...</p>
+          <a href="${appScheme}://wallet?topup=success&amount=${result.amount}">
+            Open Sakkaram App
+          </a>
+        </body>
+        </html>
+      `);
     }
-    return res.redirect(`${process.env.FRONTEND_URL || 'sakkaram://'}/wallet?topup=failed`);
+
+    return res.send(`
+      <!DOCTYPE html>
+      <html>
+      <head>
+        <meta charset="utf-8">
+        <title>Payment Failed</title>
+        <style>
+          body { font-family: sans-serif; text-align: center; padding: 40px; background: #fef2f2; }
+          h1 { color: #dc2626; }
+          a  { display: inline-block; margin-top: 20px; padding: 14px 28px;
+               background: #dc2626; color: white; border-radius: 10px;
+               text-decoration: none; font-weight: bold; }
+        </style>
+        <script>
+          setTimeout(function() {
+            window.location.href = '${appScheme}://wallet?topup=failed';
+          }, 1500);
+        </script>
+      </head>
+      <body>
+        <h1>❌ Payment Failed</h1>
+        <p>Your wallet was not charged. Please try again.</p>
+        <a href="${appScheme}://wallet?topup=failed">Back to App</a>
+      </body>
+      </html>
+    `);
 
   } catch (err) {
     logger.error('handleTopupReturn error:', err.message);
-    res.redirect(`${process.env.FRONTEND_URL || 'sakkaram://'}/wallet?topup=error`);
+    const appScheme = process.env.APP_SCHEME || 'sakkaram';
+    res.redirect(`${appScheme}://wallet?topup=error`);
   }
 };
 

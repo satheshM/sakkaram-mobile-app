@@ -1,14 +1,12 @@
 /**
- * paymentService.js — Phase 2
+ * paymentService.js — Phase 5 (Clean)
  *
- * WHAT CHANGED vs original:
- *  1. initiateBookingPayment  — same as before but also saves cashfree_order_id on booking
- *  2. verifyAndCompletePayment— same as before but also auto-credits owner wallet
- *                               (original credited owner wallet already; we keep that + fix)
- *  3. initiateWalletTopup     — NEW: create Cashfree order for wallet top-up
- *  4. verifyWalletTopup       — NEW: verify topup payment and credit user wallet
- *  5. processBookingRefund    — same as original
- *  6. getPaymentDetails       — same as original
+ *  1. initiateBookingPayment   — create Cashfree order for booking payment
+ *  2. verifyAndCompletePayment — verify booking payment & credit owner wallet
+ *  3. initiateWalletTopup      — create Cashfree order for wallet top-up
+ *  4. verifyWalletTopup        — verify topup & credit user wallet
+ *  5. processBookingRefund     — refund a booking via Cashfree
+ *  6. getPaymentDetails        — fetch payment record for a booking
  */
 
 const { query, pool } = require('../config/db');
@@ -53,7 +51,6 @@ const initiateBookingPayment = async (bookingId, userId) => {
 
     const orderId = generateOrderId();
 
-    // Create payment record
     const payRes = await client.query(
       `INSERT INTO payments
          (payment_id, booking_id, user_id, amount, currency,
@@ -66,7 +63,6 @@ const initiateBookingPayment = async (bookingId, userId) => {
        `Booking #${booking.booking_number}`]
     );
 
-    // Create Cashfree order
     const cfOrder = await createPaymentOrder({
       amount:        totalAmount,
       customerId:    userId,
@@ -76,7 +72,6 @@ const initiateBookingPayment = async (bookingId, userId) => {
       returnUrl: `${process.env.BACKEND_URL}/api/payments/return?bookingId=${bookingId}&orderId=${orderId}`,
     });
 
-    // Save session id on payment record
     if (payRes.rows.length > 0) {
       await client.query(
         `UPDATE payments SET gateway_response=$1 WHERE id=$2`,
@@ -84,7 +79,6 @@ const initiateBookingPayment = async (bookingId, userId) => {
       );
     }
 
-    // Save cashfree_order_id on booking for easy lookup
     await client.query(
       `UPDATE bookings SET cashfree_order_id=$1, updated_at=NOW() WHERE id=$2`,
       [orderId, bookingId]
@@ -119,7 +113,6 @@ const verifyAndCompletePayment = async (orderId) => {
   try {
     await client.query('BEGIN');
 
-    // Find payment record
     const payRes = await client.query(
       `SELECT p.*, b.owner_id, b.booking_number,
               b.base_amount, b.owner_commission, b.total_owner_receives
@@ -134,13 +127,11 @@ const verifyAndCompletePayment = async (orderId) => {
 
     const payment = payRes.rows[0];
 
-    // Idempotent
     if (['success', 'paid'].includes(payment.status)) {
       await client.query('ROLLBACK');
       return { success: true, status: 'ALREADY_PAID', bookingId: payment.booking_id };
     }
 
-    // Verify with Cashfree
     const verification = await verifyPayment(orderId);
 
     if (!verification.success) {
@@ -153,7 +144,6 @@ const verifyAndCompletePayment = async (orderId) => {
       return { success: false, status: verification.status, message: 'Payment failed' };
     }
 
-    // Mark payment success
     await client.query(
       `UPDATE payments SET status='success', payment_method=$1,
          gateway_response=$2, updated_at=NOW()
@@ -162,7 +152,6 @@ const verifyAndCompletePayment = async (orderId) => {
        JSON.stringify(verification), orderId]
     );
 
-    // Mark booking paid
     await client.query(
       `UPDATE bookings
          SET payment_status='paid', payment_method='cashfree_online',
@@ -171,7 +160,6 @@ const verifyAndCompletePayment = async (orderId) => {
       [verification.paymentId, payment.booking_id]
     );
 
-    // Credit owner wallet (total_owner_receives = base - commission)
     const ownerShare = parseFloat(payment.total_owner_receives) || 0;
     if (ownerShare > 0) {
       await _creditWallet(
@@ -229,11 +217,10 @@ const initiateWalletTopup = async (userId, amount) => {
       returnUrl: `${process.env.BACKEND_URL}/api/payments/topup-return?orderId=${orderId}`,
     });
 
-    // Record topup order
     await client.query(
       `INSERT INTO wallet_topup_orders
-         (user_id, cashfree_order_id, cashfree_session_id, amount, status, created_at)
-       VALUES ($1,$2,$3,$4,'pending',NOW())
+         (user_id, cashfree_order_id, cashfree_session_id, amount, status, created_at, updated_at)
+       VALUES ($1, $2, $3, $4, 'pending', NOW(), NOW())
        ON CONFLICT (cashfree_order_id) DO NOTHING`,
       [userId, orderId, cfOrder.paymentSessionId, topupAmount]
     );
@@ -266,13 +253,12 @@ const verifyWalletTopup = async (orderId) => {
     await client.query('BEGIN');
 
     const topupRes = await client.query(
-      'SELECT * FROM wallet_topup_orders WHERE cashfree_order_id=$1', [orderId]
+      'SELECT * FROM wallet_topup_orders WHERE cashfree_order_id=$1 FOR UPDATE', [orderId]
     );
     if (!topupRes.rows.length) throw new Error(`Topup order not found: ${orderId}`);
 
     const topup = topupRes.rows[0];
 
-    // Idempotent
     if (topup.wallet_credited) {
       await client.query('ROLLBACK');
       return { success: true, status: 'ALREADY_CREDITED', amount: topup.amount };
@@ -283,26 +269,30 @@ const verifyWalletTopup = async (orderId) => {
     if (!verification.success) {
       await client.query(
         `UPDATE wallet_topup_orders SET status='failed', updated_at=NOW()
-         WHERE cashfree_order_id=$1`,
-        [orderId]
+         WHERE cashfree_order_id=$1`, [orderId]
       );
       await client.query('COMMIT');
       return { success: false, status: verification.status, message: 'Payment not successful' };
     }
 
-    // Credit wallet
     await _creditWallet(
       client, topup.user_id, parseFloat(topup.amount), null,
       'Wallet top-up via Cashfree', 'topup'
     );
 
-    // Mark credited
     await client.query(
       `UPDATE wallet_topup_orders
          SET status='success', wallet_credited=true, updated_at=NOW()
-       WHERE cashfree_order_id=$1`,
-      [orderId]
+       WHERE cashfree_order_id=$1`, [orderId]
     );
+
+    await client.query(
+      `INSERT INTO notifications
+         (user_id, type, title, message, reference_type, is_read, created_at)
+       VALUES ($1, 'wallet_credited', '✅ Wallet Credited', $2, 'topup', false, NOW())`,
+      [topup.user_id,
+       `₹${parseFloat(topup.amount).toFixed(2)} added to your wallet via Cashfree payment`]
+    ).catch(() => {});
 
     await client.query('COMMIT');
 
@@ -319,7 +309,7 @@ const verifyWalletTopup = async (orderId) => {
   }
 };
 
-// ─── 5. Process Booking Refund (unchanged from original) ─────────────────────
+// ─── 5. Process Booking Refund ────────────────────────────────────────────────
 
 const processBookingRefund = async (bookingId, userId, reason) => {
   const client = await pool.connect();
@@ -349,8 +339,7 @@ const processBookingRefund = async (bookingId, userId, reason) => {
 
     await client.query(
       `UPDATE bookings SET status='cancelled', payment_status='refunded', updated_at=NOW()
-       WHERE id=$1`,
-      [bookingId]
+       WHERE id=$1`, [bookingId]
     );
     await client.query(
       `UPDATE payments SET status='refunded', updated_at=NOW() WHERE booking_id=$1`,
@@ -369,7 +358,7 @@ const processBookingRefund = async (bookingId, userId, reason) => {
   }
 };
 
-// ─── 6. Get Payment Details (unchanged from original) ────────────────────────
+// ─── 6. Get Payment Details ───────────────────────────────────────────────────
 
 const getPaymentDetails = async (bookingId, userId) => {
   const result = await query(
