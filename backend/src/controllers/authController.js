@@ -73,9 +73,10 @@ const sendOTP = async (req, res) => {
                    && process.env.NODE_ENV !== 'production';
 
     return res.status(200).json({
-      success:   true,
-      message:   'OTP sent successfully',
-      expiresIn: OTP_TTL_MS / 1000,
+      success:        true,
+      message:        'OTP sent successfully',
+      expiresIn:      OTP_TTL_MS / 1000,
+      resendCooldown: OTP_RESEND_COOLDOWN,  // tells mobile exactly how long to count down
       ...(isDevMode && { dev_otp: otp, dev_note: 'Dev mode only – never shown in production' }),
     });
 
@@ -114,12 +115,12 @@ const verifyOTP = async (req, res) => {
       return res.status(429).json({ success: false, message: 'Too many failed attempts. Please request a new OTP.' });
     }
 
-    // FIX: String comparison – OTP stored as string, submitted value may be string/number
     if (String(user.otp_code) !== String(otp).trim()) {
       await query('UPDATE users SET otp_attempts=otp_attempts+1 WHERE id=$1', [user.id]);
       const left = MAX_OTP_ATTEMPTS - (user.otp_attempts + 1);
       return res.status(400).json({
-        success: false, message: 'Invalid OTP',
+        success:      false,
+        message:      `Invalid OTP. ${Math.max(0, left)} attempt${left !== 1 ? 's' : ''} remaining.`,
         attemptsLeft: Math.max(0, left),
       });
     }
@@ -179,8 +180,6 @@ const verifyOTP = async (req, res) => {
     const refreshToken = authService.generateRefreshToken(user.id);
     await authService.createSession(user.id, refreshToken);
 
-    // Phase 6b: blocked users get tokens (so they can reach support chat)
-    // but isBlocked=true tells the app to show the blocked/chat screen
     const isBlocked = user.is_active === false;
 
     return res.status(200).json({
@@ -317,8 +316,7 @@ const refreshToken = async (req, res) => {
     }
 
     return res.status(200).json({
-      success:     true,
-      isBlocked:   user.is_active === false,
+      success: true,
       accessToken: authService.generateAccessToken(user.id, user.role),
     });
   } catch (error) {
