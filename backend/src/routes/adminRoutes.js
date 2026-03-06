@@ -64,4 +64,25 @@ router.get('/revenue', adminController.getRevenue);
  */
 router.get('/export/:type', adminController.exportData);
 
+/**
+ * @route   GET  /api/admin/topup-requests
+ * @desc    Get all wallet topup requests (filterable by status)
+ * @access  Admin only
+ */
+router.get('/topup-requests', adminController.getTopupRequestsHandler);
+
+/**
+ * @route   PUT  /api/admin/topup-requests/:requestId/approve
+ * @desc    Approve a topup request and credit user wallet
+ * @access  Admin only
+ */
+router.put('/topup-requests/:requestId/approve', adminController.approveTopup);
+
+/**
+ * @route   PUT  /api/admin/topup-requests/:requestId/reject
+ * @desc    Reject a topup request
+ * @access  Admin only
+ */
+router.put('/topup-requests/:requestId/reject', adminController.rejectTopup);
+
 module.exports = router;

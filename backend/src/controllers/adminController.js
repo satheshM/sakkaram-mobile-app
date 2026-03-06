@@ -4,7 +4,10 @@ const {
   toggleUserStatus,
   getAllBookings,
   getAllVehicles,
-  getRevenueReport
+  getRevenueReport,
+  getTopupRequests,
+  approveTopupRequest,
+  rejectTopupRequest,
 } = require('../services/adminService');
 const logger = require('../config/logger');
 
@@ -359,6 +362,65 @@ function convertToCSV(data, fields, headers) {
   return csv;
 }
 
+// ─────────────────────────────────────────────────────────────────────────────
+// PHASE 4: Wallet Topup Request handlers
+// ─────────────────────────────────────────────────────────────────────────────
+
+/**
+ * GET /api/admin/topup-requests
+ * Query params: status (all|pending|approved|rejected), page, limit
+ */
+const getTopupRequestsHandler = async (req, res) => {
+  try {
+    const { status = 'all', page = 1, limit = 20 } = req.query;
+    const result = await getTopupRequests(status, page, limit);
+    res.status(200).json({ success: true, ...result });
+  } catch (error) {
+    logger.error('getTopupRequests error:', error);
+    res.status(500).json({ success: false, message: 'Failed to fetch topup requests' });
+  }
+};
+
+/**
+ * PUT /api/admin/topup-requests/:requestId/approve
+ * Body: { adminNote }
+ */
+const approveTopup = async (req, res) => {
+  try {
+    const { requestId } = req.params;
+    const { adminNote = '' } = req.body;
+    const adminId = req.user.userId;
+
+    const result = await approveTopupRequest(requestId, adminId, adminNote);
+    res.status(200).json({ success: true, message: 'Topup approved and wallet credited', ...result });
+  } catch (error) {
+    logger.error('approveTopup error:', error);
+    const status = error.message.includes('not found') ? 404
+                 : error.message.includes('already')  ? 400 : 500;
+    res.status(status).json({ success: false, message: error.message });
+  }
+};
+
+/**
+ * PUT /api/admin/topup-requests/:requestId/reject
+ * Body: { adminNote }
+ */
+const rejectTopup = async (req, res) => {
+  try {
+    const { requestId } = req.params;
+    const { adminNote = '' } = req.body;
+    const adminId = req.user.userId;
+
+    await rejectTopupRequest(requestId, adminId, adminNote);
+    res.status(200).json({ success: true, message: 'Topup request rejected' });
+  } catch (error) {
+    logger.error('rejectTopup error:', error);
+    const status = error.message.includes('not found') ? 404
+                 : error.message.includes('already')  ? 400 : 500;
+    res.status(status).json({ success: false, message: error.message });
+  }
+};
+
 module.exports = {
   getPlatformStatistics,
   getUsers,
@@ -367,5 +429,9 @@ module.exports = {
   getBookings,
   getVehicles,
   getRevenue,
-  exportData
+  exportData,
+  // Phase 4
+  getTopupRequestsHandler,
+  approveTopup,
+  rejectTopup,
 };

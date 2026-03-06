@@ -38,4 +38,11 @@ router.get('/transactions', verifyToken, walletController.getTransactions);
  */
 router.post('/withdraw', verifyToken, walletController.withdrawMoney);
 
+/**
+ * @route   GET /api/wallet/topup-requests
+ * @desc    Get my topup requests (user sees their own history)
+ * @access  Private
+ */
+router.get('/topup-requests', verifyToken, walletController.getMyTopupRequests);
+
 module.exports = router;

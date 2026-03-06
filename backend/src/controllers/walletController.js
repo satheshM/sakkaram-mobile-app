@@ -41,92 +41,87 @@ const getWalletBalance = async (req, res) => {
 };
 
 /**
- * Add Money to Wallet (Top-up)
+ * Add Money to Wallet (Phase 4 — creates a PENDING topup request for admin approval)
+ * POST /api/wallet/add-money
+ * Body: { amount, transactionId (UTR), paymentMethod }
  */
 const addMoney = async (req, res) => {
   try {
     const userId = req.user.userId;
-    const { amount, paymentScreenshot, transactionId, paymentMethod } = req.body;
+    const { amount, transactionId, paymentMethod } = req.body;
 
-    if (!amount || amount <= 0) {
-      return res.status(400).json({
-        success: false,
-        message: 'Invalid amount'
-      });
+    if (!amount || parseFloat(amount) <= 0) {
+      return res.status(400).json({ success: false, message: 'Invalid amount' });
+    }
+    if (!transactionId || transactionId.trim().length < 6) {
+      return res.status(400).json({ success: false, message: 'Valid UTR / transaction ID is required' });
     }
 
     const topupAmount = parseFloat(amount);
+    const utr = transactionId.trim().toUpperCase();
 
-    // Get or create wallet
-    let walletResult = await query(
-      'SELECT * FROM wallets WHERE user_id = $1',
-      [userId]
+    // Check for duplicate UTR from same user to prevent double-submission
+    const dupCheck = await query(
+      `SELECT id FROM wallet_topup_requests WHERE user_id = $1 AND utr_number = $2 LIMIT 1`,
+      [userId, utr]
     );
-
-    let walletId;
-    let oldBalance = 0;
-    
-    if (walletResult.rows.length === 0) {
-      const newWallet = await query(
-        'INSERT INTO wallets (user_id, balance) VALUES ($1, 0) RETURNING *',
-        [userId]
-      );
-      walletId = newWallet.rows[0].id;
-      oldBalance = 0;
-    } else {
-      walletId = walletResult.rows[0].id;
-      oldBalance = parseFloat(walletResult.rows[0].balance);
+    if (dupCheck.rows.length > 0) {
+      return res.status(400).json({
+        success: false,
+        message: 'This UTR has already been submitted. Please wait for admin review.'
+      });
     }
 
-    const newBalance = oldBalance + topupAmount;
-
-    // Update wallet balance
-    const updateResult = await query(
-      'UPDATE wallets SET balance = $1, updated_at = NOW() WHERE id = $2 RETURNING *',
-      [newBalance, walletId]
+    // Create pending topup request — wallet is NOT credited yet
+    const result = await query(
+      `INSERT INTO wallet_topup_requests (user_id, amount, utr_number, status, created_at, updated_at)
+       VALUES ($1, $2, $3, 'pending', NOW(), NOW()) RETURNING *`,
+      [userId, topupAmount, utr]
     );
 
-    // Record transaction with balance tracking
-    await query(
-      `INSERT INTO wallet_transactions (
-        wallet_id, 
-        transaction_type, 
-        amount, 
-        balance_before,
-        balance_after,
-        description, 
-        reference_type,
-        created_at
-      ) VALUES ($1, $2, $3, $4, $5, $6, $7, NOW())`,
-      [
-        walletId,
-        'credit',
-        topupAmount,
-        oldBalance,
-        newBalance,
-        `Wallet top-up via ${paymentMethod || 'UPI'}`,
-        'topup'
-      ]
-    );
+    logger.info('Topup request submitted', { userId, amount: topupAmount, utr });
 
-    logger.info(`Wallet top-up: ${userId} added ₹${topupAmount}`, {
-      oldBalance,
-      newBalance,
-      amount: topupAmount
-    });
+    // Return current wallet balance (unchanged — not credited yet)
+    const walletResult = await query(
+      'SELECT * FROM wallets WHERE user_id = $1', [userId]
+    );
 
     res.status(200).json({
       success: true,
-      message: 'Money added successfully',
-      wallet: updateResult.rows[0]
+      message: 'Top-up request submitted. Your wallet will be credited after admin verification (usually within 30 minutes).',
+      request: result.rows[0],
+      wallet: walletResult.rows[0] || null,
     });
 
   } catch (error) {
-    logger.error('Add money error:', error);
-    res.status(500).json({
-      success: false,
-      message: 'Failed to add money'
-    });
+    logger.error('Add money (topup request) error:', error);
+    res.status(500).json({ success: false, message: 'Failed to submit top-up request' });
+  }
+};
+
+/**
+ * Get my topup requests (user sees their own pending/approved/rejected requests)
+ * GET /api/wallet/topup-requests
+ */
+const getMyTopupRequests = async (req, res) => {
+  try {
+    const userId = req.user.userId;
+    const { page = 1, limit = 10 } = req.query;
+    const offset = (page - 1) * limit;
+
+    const result = await query(
+      `SELECT id, amount, utr_number, status, admin_note, created_at, reviewed_at
+       FROM wallet_topup_requests
+       WHERE user_id = $1
+       ORDER BY created_at DESC
+       LIMIT $2 OFFSET $3`,
+      [userId, limit, offset]
+    );
+
+    res.status(200).json({ success: true, requests: result.rows });
+  } catch (error) {
+    logger.error('getMyTopupRequests error:', error);
+    res.status(500).json({ success: false, message: 'Failed to fetch requests' });
   }
 };
 
@@ -398,6 +393,7 @@ const withdrawMoney = async (req, res) => {
 module.exports = {
   getWalletBalance,
   addMoney,
+  getMyTopupRequests,
   deductCommission,
   getTransactions,
   withdrawMoney

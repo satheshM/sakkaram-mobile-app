@@ -365,11 +365,229 @@ const getRevenueReport = async (startDate = null, endDate = null) => {
   }
 };
 
+// ─────────────────────────────────────────────────────────────────────────────
+// PHASE 4: Wallet Topup Requests
+// ─────────────────────────────────────────────────────────────────────────────
+
+/**
+ * Get all topup requests with optional status filter
+ */
+const getTopupRequests = async (status = null, page = 1, limit = 20) => {
+  try {
+    const offset = (page - 1) * limit;
+    const params = [];
+    let where = '';
+
+    if (status && status !== 'all') {
+      params.push(status);
+      where = `WHERE r.status = $${params.length}`;
+    }
+
+    const result = await pool.query(
+      `SELECT
+        r.id, r.amount, r.utr_number, r.status,
+        r.admin_note, r.created_at, r.reviewed_at,
+        u.full_name  AS user_name,
+        u.phone_number AS user_phone,
+        u.id         AS user_id,
+        a.full_name  AS reviewed_by_name
+       FROM wallet_topup_requests r
+       JOIN users u ON u.id = r.user_id
+       LEFT JOIN users a ON a.id = r.reviewed_by
+       ${where}
+       ORDER BY
+         CASE r.status WHEN 'pending' THEN 0 ELSE 1 END,
+         r.created_at DESC
+       LIMIT $${params.length + 1} OFFSET $${params.length + 2}`,
+      [...params, limit, offset]
+    );
+
+    const countResult = await pool.query(
+      `SELECT COUNT(*) FROM wallet_topup_requests r ${where}`,
+      params
+    );
+
+    const pendingCount = await pool.query(
+      `SELECT COUNT(*) FROM wallet_topup_requests WHERE status = 'pending'`
+    );
+
+    return {
+      requests: result.rows,
+      pagination: {
+        currentPage:  parseInt(page),
+        totalPages:   Math.ceil(parseInt(countResult.rows[0].count) / limit),
+        totalRequests: parseInt(countResult.rows[0].count),
+        limit:        parseInt(limit),
+      },
+      pendingCount: parseInt(pendingCount.rows[0].count),
+    };
+  } catch (error) {
+    logger.error('getTopupRequests error:', error);
+    throw error;
+  }
+};
+
+/**
+ * Approve a topup request — credits wallet and sends notification
+ */
+const approveTopupRequest = async (requestId, adminId, adminNote = '') => {
+  const client = await pool.connect();
+  try {
+    await client.query('BEGIN');
+
+    // Fetch request and lock it
+    const reqResult = await client.query(
+      `SELECT * FROM wallet_topup_requests WHERE id = $1 FOR UPDATE`,
+      [requestId]
+    );
+    if (!reqResult.rows.length) throw new Error('Request not found');
+
+    const req = reqResult.rows[0];
+    if (req.status !== 'pending') throw new Error(`Request is already ${req.status}`);
+
+    // Get or create wallet
+    let walletResult = await client.query(
+      'SELECT * FROM wallets WHERE user_id = $1', [req.user_id]
+    );
+    let wallet;
+    if (!walletResult.rows.length) {
+      const w = await client.query(
+        'INSERT INTO wallets (user_id, balance) VALUES ($1, 0) RETURNING *',
+        [req.user_id]
+      );
+      wallet = w.rows[0];
+    } else {
+      wallet = walletResult.rows[0];
+    }
+
+    const oldBalance = parseFloat(wallet.balance);
+    const newBalance = oldBalance + parseFloat(req.amount);
+
+    // Credit wallet
+    await client.query(
+      'UPDATE wallets SET balance = $1, updated_at = NOW() WHERE id = $2',
+      [newBalance, wallet.id]
+    );
+
+    // Record wallet transaction
+    await client.query(
+      `INSERT INTO wallet_transactions
+        (wallet_id, transaction_type, amount, balance_before, balance_after, description, reference_type, reference_id, created_at)
+       VALUES ($1, 'credit', $2, $3, $4, $5, 'topup', $6, NOW())`,
+      [wallet.id, req.amount, oldBalance, newBalance,
+       `Wallet top-up approved by admin (UTR: ${req.utr_number})`, req.id]
+    );
+
+    // Mark request approved
+    await client.query(
+      `UPDATE wallet_topup_requests
+       SET status='approved', admin_note=$1, reviewed_by=$2, reviewed_at=NOW(), updated_at=NOW()
+       WHERE id=$3`,
+      [adminNote, adminId, requestId]
+    );
+
+    // Send in-app notification to user
+    await client.query(
+      `INSERT INTO notifications (user_id, type, title, message, reference_type, reference_id, is_read, created_at)
+       VALUES ($1, 'wallet_credited', '✅ Wallet Credited', $2, 'topup', $3, false, NOW())`,
+      [req.user_id,
+       `₹${parseFloat(req.amount).toFixed(2)} has been added to your wallet. New balance: ₹${newBalance.toFixed(2)}`,
+       req.id]
+    );
+
+    await client.query('COMMIT');
+
+    logger.info('Topup approved', { requestId, adminId, amount: req.amount, userId: req.user_id });
+    return { success: true, amount: req.amount, newBalance };
+
+  } catch (error) {
+    await client.query('ROLLBACK');
+    logger.error('approveTopupRequest error:', error);
+    throw error;
+  } finally {
+    client.release();
+  }
+};
+
+/**
+ * Reject a topup request — sends notification to user
+ */
+const rejectTopupRequest = async (requestId, adminId, adminNote = '') => {
+  const client = await pool.connect();
+  try {
+    await client.query('BEGIN');
+
+    const reqResult = await client.query(
+      `SELECT * FROM wallet_topup_requests WHERE id = $1 FOR UPDATE`,
+      [requestId]
+    );
+    if (!reqResult.rows.length) throw new Error('Request not found');
+
+    const req = reqResult.rows[0];
+    if (req.status !== 'pending') throw new Error(`Request is already ${req.status}`);
+
+    // Mark rejected
+    await client.query(
+      `UPDATE wallet_topup_requests
+       SET status='rejected', admin_note=$1, reviewed_by=$2, reviewed_at=NOW(), updated_at=NOW()
+       WHERE id=$3`,
+      [adminNote, adminId, requestId]
+    );
+
+    // Notify user
+    await client.query(
+      `INSERT INTO notifications (user_id, type, title, message, reference_type, reference_id, is_read, created_at)
+       VALUES ($1, 'wallet_debited', '❌ Topup Rejected', $2, 'topup', $3, false, NOW())`,
+      [req.user_id,
+       `Your ₹${parseFloat(req.amount).toFixed(2)} wallet top-up request was rejected.${adminNote ? ` Reason: ${adminNote}` : ' Please contact support if you believe this is an error.'}`,
+       req.id]
+    );
+
+    await client.query('COMMIT');
+
+    logger.info('Topup rejected', { requestId, adminId, userId: req.user_id });
+    return { success: true };
+
+  } catch (error) {
+    await client.query('ROLLBACK');
+    logger.error('rejectTopupRequest error:', error);
+    throw error;
+  } finally {
+    client.release();
+  }
+};
+
+/**
+ * Get topup requests for a specific user (for mobile WalletScreen)
+ */
+const getUserTopupRequests = async (userId, page = 1, limit = 10) => {
+  try {
+    const offset = (page - 1) * limit;
+    const result = await pool.query(
+      `SELECT id, amount, utr_number, status, admin_note, created_at, reviewed_at
+       FROM wallet_topup_requests
+       WHERE user_id = $1
+       ORDER BY created_at DESC
+       LIMIT $2 OFFSET $3`,
+      [userId, limit, offset]
+    );
+    return { requests: result.rows };
+  } catch (error) {
+    logger.error('getUserTopupRequests error:', error);
+    throw error;
+  }
+};
+
 module.exports = {
   getPlatformStats,
   getAllUsers,
   toggleUserStatus,
   getAllBookings,
   getAllVehicles,
-  getRevenueReport
+  getRevenueReport,
+  // Phase 4
+  getTopupRequests,
+  approveTopupRequest,
+  rejectTopupRequest,
+  getUserTopupRequests,
 };
